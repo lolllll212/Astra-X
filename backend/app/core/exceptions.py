@@ -2,13 +2,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from http import HTTPStatus
 from typing import Any
 
-from fastapi import FastAPI, Request
+from fastapi import Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import ORJSONResponse
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from starlette import status
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -47,7 +46,7 @@ class ErrorResponse(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    error: "ErrorPayload"
+    error: ErrorPayload
 
 
 class ErrorPayload(BaseModel):
@@ -433,6 +432,7 @@ async def http_exception_handler(
     """
     request_id = _get_request_id(request)
 
+    error: AstraError
     if exc.status_code == status.HTTP_401_UNAUTHORIZED:
         error = AuthenticationError(
             message=str(exc.detail),
@@ -445,4 +445,29 @@ async def http_exception_handler(
         )
     elif exc.status_code == status.HTTP_404_NOT_FOUND:
         error = ResourceNotFoundError(
-            message=str(exc
+            message=str(exc.detail),
+            cause=exc,
+        )
+    elif exc.status_code == status.HTTP_409_CONFLICT:
+        error = ConflictError(
+            message=str(exc.detail),
+            cause=exc,
+        )
+    elif exc.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY:
+        error = ValidationError(
+            message=str(exc.detail),
+            cause=exc,
+        )
+    elif exc.status_code == status.HTTP_429_TOO_MANY_REQUESTS:
+        error = RateLimitError(
+            message=str(exc.detail),
+            cause=exc,
+        )
+    else:
+        error = InternalServerError(
+            message=str(exc.detail),
+            cause=exc,
+        )
+
+    _log_astra_error(request, error, request_id)
+    return _build_error_response(error, request_id)
