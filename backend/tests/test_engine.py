@@ -1,7 +1,7 @@
 import asyncio
 
-from app.database.engine import build_engine, verify_connectivity
 from app.config.settings import get_settings
+from app.database.engine import build_engine, verify_connectivity
 
 
 async def main():
@@ -11,7 +11,7 @@ async def main():
 
     await verify_connectivity(engine)
 
-    print("✅ Database Connected")
+    print("✅ Database Connected!")
 
     await engine.dispose()
 
