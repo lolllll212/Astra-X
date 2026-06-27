@@ -1,0 +1,348 @@
+"""Agent coordinator.
+
+The :class:`Coordinator` is the high-level orchestrator for the agent
+framework. It is the single entry point that the API layer calls instead
+of ``ChatService`` directly.
+
+The coordinator:
+
+1. Creates an :class:`AgentState` for the request.
+2. Loads memory context via the :class:`MemoryManager`.
+3. Calls the :class:`Planner` to decompose the goal into tasks.
+4. For each task, calls the :class:`Executor` to run it.
+5. After each task, calls :class:`Reflection` to evaluate quality.
+6. If reflection indicates more work is needed, plans and executes
+   follow-up tasks.
+7. Repeats the plan → execute → reflect loop up to ``max_iterations``.
+8. Returns the final assembled response.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from uuid import uuid4
+
+from app.agents.base import AgentConfig
+from app.agents.executor import Executor
+from app.agents.memory_manager import MemoryManager
+from app.agents.models.execution import ReflectionResult
+from app.agents.models.plan import Plan
+from app.agents.models.task import Task, TaskStatus
+from app.agents.planner import Planner
+from app.agents.reflection import Reflection
+from app.agents.state import AgentState
+from app.agents.task_graph import TaskGraph
+from app.core.logging import get_logger
+from app.domain.enums import MessageRole
+from app.domain.message import Message, TextBlock
+from app.llm.models import CompletionRequest, CompletionResponse, GenerationParams
+from app.llm.router import LLMRouter
+
+logger = get_logger(__name__)
+
+
+@dataclass
+class CoordinatorResult:
+    """The final output of a coordinator run.
+
+    Attributes:
+        final_answer: The assembled response text.
+        plan: The plan that was executed (for auditing).
+        state: The final agent state.
+        iterations: Number of plan→execute→reflect cycles.
+        needs_more_work: Whether the agent thinks more work is needed
+            (limited by max_iterations).
+    """
+
+    final_answer: str
+    plan: Plan | None
+    state: AgentState
+    iterations: int
+    needs_more_work: bool
+
+
+class Coordinator:
+    """Orchestrates the full agent lifecycle.
+
+    Usage::
+
+        coordinator = Coordinator(
+            planner=planner,
+            executor=executor,
+            reflection=reflection,
+            memory_manager=memory_manager,
+            llm_router=router,
+            config=AgentConfig(model="llama3.1"),
+        )
+        result = await coordinator.run(
+            conversation_id="...",
+            goal="Research RTX 5070 laptops",
+        )
+        print(result.final_answer)
+    """
+
+    def __init__(
+        self,
+        planner: Planner,
+        executor: Executor,
+        reflection: Reflection,
+        memory_manager: MemoryManager,
+        llm_router: LLMRouter,
+        config: AgentConfig | None = None,
+    ) -> None:
+        self._planner = planner
+        self._executor = executor
+        self._reflection = reflection
+        self._memory_manager = memory_manager
+        self._llm_router = llm_router
+        self._config = config or AgentConfig()
+
+    async def run(
+        self,
+        conversation_id: str,
+        goal: str,
+    ) -> CoordinatorResult:
+        """Execute the full agent lifecycle for a user goal.
+
+        Args:
+            conversation_id: The active conversation.
+            goal: The user's request.
+
+        Returns:
+            The final answer, plan, and execution state.
+        """
+        state = AgentState(
+            conversation_id=conversation_id,
+            goal=goal,
+        )
+
+        # Load memory context.
+        state.memory_context = await self._memory_manager.get_context(
+            conversation_id=conversation_id,
+            goal=goal,
+        )
+
+        # Main agent loop.
+        while not state.is_exhausted:
+            logger.info(
+                "coordinator.iteration_start",
+                iteration=state.iteration + 1,
+                max_iterations=state.max_iterations,
+                goal=goal,
+            )
+
+            # Step 1 — Plan.
+            plan = await self._planner.plan(
+                goal=goal,
+                context=state.memory_context,
+            )
+            state.plan = plan
+            graph = self._build_graph(plan)
+
+            # Step 2 — Execute tasks.
+            while not graph.is_complete():
+                ready_tasks = graph.get_ready()
+                if not ready_tasks:
+                    logger.warning("coordinator.no_ready_tasks")
+                    break
+
+                for task in ready_tasks:
+                    graph.update_status(task.id, TaskStatus.RUNNING)
+
+                    result = await self._executor.execute(task)
+                    state.completed_results[result.task_id] = result
+
+                    new_status = (
+                        TaskStatus.COMPLETED
+                        if result.status is TaskStatus.COMPLETED
+                        else TaskStatus.FAILED
+                    )
+                    graph.update_status(task.id, new_status)
+
+                    # Store in memory.
+                    await self._memory_manager.store_result(
+                        conversation_id=conversation_id,
+                        result=result,
+                    )
+
+                    # Step 3 — Reflect.
+                    assessment = await self._reflection.reflect(result)
+                    if assessment.needs_more_work:
+                        follow_up_tasks = self._create_follow_ups(
+                            assessment=assessment,
+                            base_id=task.id,
+                        )
+                        for ft in follow_up_tasks:
+                            graph.add_task(ft, depends_on=[task.id])
+
+            state.iteration += 1
+
+            # Check whether the result is satisfactory.
+            final_assessment = await self._reflect_on_plan(state)
+            if not final_assessment.needs_more_work:
+                break
+
+        # Assemble final answer.
+        final_answer = self._assemble_answer(state)
+        logger.info(
+            "coordinator.complete",
+            iterations=state.iteration,
+            tasks_completed=state.completed_task_count,
+            tasks_failed=state.failed_task_count,
+        )
+
+        return CoordinatorResult(
+            final_answer=final_answer,
+            plan=state.plan,
+            state=state,
+            iterations=state.iteration,
+            needs_more_work=state.is_exhausted and not state.has_errors,
+        )
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _build_graph(plan: Plan) -> TaskGraph:
+        """Build a :class:`TaskGraph` from a plan.
+
+        Args:
+            plan: The plan to convert into a graph.
+
+        Returns:
+            A task graph with all tasks and their dependencies.
+        """
+        graph = TaskGraph()
+        for task in plan.tasks:
+            graph.add_task(task, depends_on=task.dependencies)
+        return graph
+
+    @staticmethod
+    def _create_follow_ups(
+        assessment: object,
+        base_id: str,
+    ) -> list[Task]:
+        """Create follow-up tasks from a reflection assessment.
+
+        Args:
+            assessment: The reflection result with suggested next tasks.
+            base_id: The task ID that was reflected on.
+
+        Returns:
+            A list of new tasks.
+        """
+        if not isinstance(assessment, ReflectionResult):
+            return []
+
+        return [
+            Task(
+                id=str(uuid4()),
+                description=desc,
+                dependencies=[base_id],
+            )
+            for desc in assessment.next_tasks
+        ]
+
+    async def _reflect_on_plan(self, state: AgentState) -> ReflectionResult:
+        """Evaluate overall progress using the LLM.
+
+        Args:
+            state: The current agent state.
+
+        Returns:
+            A reflection result.
+        """
+        summary = self._build_summary(state)
+        if not summary:
+            return ReflectionResult(
+                needs_more_work=False,
+                reason="No tasks were executed.",
+                confidence=1.0,
+            )
+
+        messages = [
+            Message(
+                id=str(uuid4()),
+                conversation_id="",
+                role=MessageRole.USER,
+                content=[TextBlock(text=summary)],
+            ),
+        ]
+
+        request = CompletionRequest(
+            messages=messages,
+            model=self._config.model,
+            provider=self._config.provider,
+            params=GenerationParams(
+                temperature=0.3,
+                max_tokens=512,
+            ),
+        )
+
+        try:
+            response: CompletionResponse = await self._llm_router.generate(request)
+            text = ""
+            for block in response.message.content:
+                if isinstance(block, TextBlock):
+                    text += block.text
+
+            return ReflectionResult(
+                needs_more_work="no" not in text.lower()[:100],
+                reason=text[:500],
+                confidence=0.7,
+            )
+        except Exception:
+            return ReflectionResult(
+                needs_more_work=False,
+                reason="Reflection LLM call failed; accepting current result.",
+                confidence=0.5,
+            )
+
+    def _build_summary(self, state: AgentState) -> str:
+        """Build a summary of execution for reflection.
+
+        Args:
+            state: The current agent state.
+
+        Returns:
+            A summary string, or empty string if no tasks executed.
+        """
+        if not state.completed_results:
+            return ""
+
+        lines: list[str] = [
+            "Summary of completed tasks:",
+        ]
+        for task_id, result in state.completed_results.items():
+            status = result.status.value.upper()
+            output_preview = (result.output or "")[:200]
+            lines.append(f"  {task_id} [{status}]: {output_preview}")
+
+        lines.append("\nIs the goal fully achieved? Answer yes or no with a brief reason.")
+        return "\n".join(lines)
+
+    def _assemble_answer(self, state: AgentState) -> str:
+        """Assemble the final answer from completed task results.
+
+        Args:
+            state: The final agent state.
+
+        Returns:
+            The assembled answer text.
+        """
+        parts: list[str] = []
+
+        for _task_id, result in state.completed_results.items():
+            if result.output:
+                parts.append(result.output)
+
+        if not parts:
+            if state.has_errors:
+                return (
+                    "I encountered errors while processing your request:\n"
+                    + "\n".join(f"- {e}" for e in state.errors)
+                )
+            return "I was unable to produce a result. Please try rephrasing your request."
+
+        return "\n\n".join(parts)
