@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 from functools import lru_cache
 
 from pydantic import Field, SecretStr, ValidationInfo, field_validator, model_validator
@@ -21,7 +21,7 @@ _DEFAULT_DEV_SECRET_KEY = "dev-secret-key-change-this-in-production-please"
 value is still in use, preventing accidental deployment with a dev secret."""
 
 
-class Environment(str, Enum):
+class Environment(StrEnum):
     """The runtime environment the application is executing in.
 
     Used to gate environment-specific defaults and safety checks (e.g.
@@ -33,7 +33,7 @@ class Environment(str, Enum):
     PRODUCTION = "production"
 
 
-class LogLevel(str, Enum):
+class LogLevel(StrEnum):
     """Supported structlog/stdlib logging levels."""
 
     DEBUG = "DEBUG"
@@ -43,7 +43,7 @@ class LogLevel(str, Enum):
     CRITICAL = "CRITICAL"
 
 
-class LogFormat(str, Enum):
+class LogFormat(StrEnum):
     """Output format for structured logs.
 
     ``CONSOLE`` is human-readable and colorized, intended for local
@@ -307,7 +307,7 @@ class Settings(BaseSettings):
     # --- Cross-field, production-safety validation -----------------------------------------
 
     @model_validator(mode="after")
-    def _enforce_production_safety(self) -> "Settings":
+    def _enforce_production_safety(self) -> Settings:
         """Reject unsafe configuration combinations when running in production.
 
         These checks intentionally depend on more than one field, which is
@@ -381,3 +381,4 @@ def get_settings() -> Settings:
         The validated, immutable application settings.
     """
     return Settings()
+

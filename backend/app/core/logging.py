@@ -54,11 +54,11 @@ from structlog.typing import EventDict, Processor
 from app.config.settings import LogFormat, LogLevel, Settings, get_settings
 
 __all__ = [
+    "bind_conversation_id",
+    "bind_request_context",
+    "clear_request_context",
     "configure_logging",
     "get_logger",
-    "bind_request_context",
-    "bind_conversation_id",
-    "clear_request_context",
     "request_context",
 ]
 
