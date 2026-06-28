@@ -17,7 +17,7 @@ from typing import Any
 from uuid import uuid4
 
 from app.agents.base import Agent, AgentConfig
-from app.agents.models.execution import ExecutionResult, ReflectionResult
+from app.agents.models.execution import ExecutionResult, ReflectionDecision, ReflectionResult
 from app.agents.models.plan import Plan
 from app.agents.models.task import Task
 from app.agents.prompts.reflection import REFLECTION_SYSTEM_PROMPT
@@ -69,7 +69,7 @@ class Reflection(Agent):
         """
         if result.status.value == "failed":
             return ReflectionResult(
-                needs_more_work=True,
+                decision=ReflectionDecision.RETRY,
                 feedback="The task failed during execution.",
                 reason=result.error or "Unknown error.",
                 confidence=0.0,
@@ -95,7 +95,7 @@ class Reflection(Agent):
 
         logger.info(
             "agent.reflection_complete",
-            needs_more_work=assessment.needs_more_work,
+            decision=assessment.decision.value,
             confidence=assessment.confidence,
         )
         return assessment
@@ -163,8 +163,14 @@ class Reflection(Agent):
 
         data: dict[str, Any] = json.loads(json_str)
 
+        decision_raw = str(data.get("decision", "accept")).lower().strip()
+        try:
+            decision = ReflectionDecision(decision_raw)
+        except ValueError:
+            decision = ReflectionDecision.ACCEPT
+
         return ReflectionResult(
-            needs_more_work=bool(data.get("needs_more_work", False)),
+            decision=decision,
             feedback=str(data["feedback"]) if data.get("feedback") else None,
             reason=str(data.get("reason", "No reason provided.")),
             next_tasks=list(data.get("next_tasks", [])),
@@ -223,12 +229,12 @@ class Reflection(Agent):
         """
         if result.output:
             return ReflectionResult(
-                needs_more_work=False,
+                decision=ReflectionDecision.ACCEPT,
                 reason="Reflection parsing failed; accepting result as-is.",
                 confidence=_DEFAULT_CONFIDENCE,
             )
         return ReflectionResult(
-            needs_more_work=True,
+            decision=ReflectionDecision.RETRY,
             reason="Reflection parsing failed and no output was produced.",
             confidence=0.0,
         )

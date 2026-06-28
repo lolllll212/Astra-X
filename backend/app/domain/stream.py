@@ -307,7 +307,9 @@ class ReflectionEvent(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     type: StreamEventType = StreamEventType.REFLECTION
-    needs_more_work: bool = Field(description="Whether more tasks are needed.")
+    decision: str = Field(
+        description="Coordinator action: 'accept', 'retry', 'replan', 'ask_user', 'abort'.",
+    )
     feedback: str | None = Field(default=None, description="Qualitative assessment.")
     reason: str = Field(description="Explanation of the decision.")
     confidence: float = Field(ge=0.0, le=1.0, description="Confidence in the result (0-1).")

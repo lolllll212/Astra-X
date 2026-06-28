@@ -8,10 +8,30 @@ These models capture the outcome of executing a single task
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.agents.models.task import TaskStatus
+
+
+class ReflectionDecision(StrEnum):
+    """Explicit decision a reflection can return to the coordinator.
+
+    Each value maps to a distinct coordinator action:
+
+    * ``ACCEPT`` — result is satisfactory, move on.
+    * ``RETRY`` — result is poor but retrying the same task may help.
+    * ``REPLAN`` — the plan itself needs revision; re-run the planner.
+    * ``ASK_USER`` — insufficient information; a user clarification is needed.
+    * ``ABORT`` — a non-recoverable error occurred; stop execution.
+    """
+
+    ACCEPT = "accept"
+    RETRY = "retry"
+    REPLAN = "replan"
+    ASK_USER = "ask_user"
+    ABORT = "abort"
 
 
 class ExecutionResult(BaseModel):
@@ -45,21 +65,23 @@ class ExecutionResult(BaseModel):
 class ReflectionResult(BaseModel):
     """The outcome of reflecting on an execution result.
 
-    Reflection decides whether more work is needed, provides feedback
-    on the quality of the result, and optionally suggests follow-up
-    tasks.
+    Reflection evaluates quality and returns an explicit decision
+    that tells the coordinator what to do next.
 
     Attributes:
-        needs_more_work: Whether additional tasks should be executed.
+        decision: What the coordinator should do next.
         feedback: Qualitative feedback on the result.
-        reason: Explanation of why more work is (or is not) needed.
+        reason: Explanation of the decision.
         next_tasks: Suggested follow-up tasks, if any.
         confidence: Self-assessed confidence in the result (0.0-1.0).
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    needs_more_work: bool = Field(description="Whether additional tasks are needed.")
+    decision: ReflectionDecision = Field(
+        default=ReflectionDecision.ACCEPT,
+        description="What the coordinator should do next.",
+    )
     feedback: str | None = Field(default=None, description="Qualitative feedback.")
     reason: str = Field(description="Explanation of the decision.")
     next_tasks: list[str] = Field(default_factory=list, description="Suggested follow-up tasks.")

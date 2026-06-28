@@ -30,7 +30,7 @@ from uuid import uuid4
 from app.agents.base import AgentConfig
 from app.agents.executor import Executor as AgentExecutor
 from app.agents.memory_manager import MemoryManager
-from app.agents.models.execution import ExecutionResult, ReflectionResult
+from app.agents.models.execution import ExecutionResult, ReflectionDecision, ReflectionResult
 from app.agents.models.task import Task, TaskStatus
 from app.agents.planner import Planner
 from app.agents.reflection import Reflection
@@ -302,7 +302,7 @@ class ChatCoordinator:
 
             completed_results: dict[str, ExecutionResult] = {}
             reflection = ReflectionResult(
-                needs_more_work=False,
+                decision=ReflectionDecision.ACCEPT,
                 reason="Initial execution.",
                 confidence=0.0,
             )
@@ -392,24 +392,22 @@ class ChatCoordinator:
                         )
                         reflection = assessment
                         yield ReflectionEvent(
-                            needs_more_work=assessment.needs_more_work,
+                            decision=assessment.decision.value,
                             feedback=assessment.feedback,
                             reason=assessment.reason,
                             confidence=assessment.confidence,
                             iteration=iteration - 1,
                         )
 
-                        if assessment.needs_more_work and assessment.next_tasks:
-                            for desc in assessment.next_tasks:
-                                follow_up = Task(
-                                    id=str(uuid4()),
-                                    description=desc,
-                                    dependencies=[task.id],
-                                )
-                                graph.add_task(follow_up, depends_on=[task.id])
+                        self._handle_reflection_decision(
+                            decision=assessment.decision,
+                            assessment=assessment,
+                            graph=graph,
+                            task=task,
+                        )
 
             # Check overall plan completeness.
-            if not reflection.needs_more_work:
+            if reflection.decision is ReflectionDecision.ACCEPT:
                 break
 
         # Step 4 — Stream the final answer.
@@ -422,6 +420,36 @@ class ChatCoordinator:
             params=params,
         ):
             yield event
+
+    @staticmethod
+    def _handle_reflection_decision(
+        decision: ReflectionDecision,
+        assessment: ReflectionResult,
+        graph: TaskGraph,
+        task: Task,
+    ) -> None:
+        """Mutate the task graph based on a reflection decision."""
+        match decision:
+            case ReflectionDecision.RETRY:
+                follow_up = Task(
+                    id=str(uuid4()),
+                    description=task.description,
+                    dependencies=[task.id],
+                    tool_name=task.tool_name,
+                )
+                graph.add_task(follow_up, depends_on=[task.id])
+
+            case ReflectionDecision.REPLAN:
+                for desc in assessment.next_tasks:
+                    follow_up = Task(
+                        id=str(uuid4()),
+                        description=desc,
+                        dependencies=[task.id],
+                    )
+                    graph.add_task(follow_up, depends_on=[task.id])
+
+            case _:
+                pass
 
     # ------------------------------------------------------------------
     # Legacy pipeline — simple tool-calling loop

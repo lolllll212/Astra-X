@@ -25,7 +25,7 @@ from uuid import uuid4
 from app.agents.base import AgentConfig
 from app.agents.executor import Executor
 from app.agents.memory_manager import MemoryManager
-from app.agents.models.execution import ReflectionResult
+from app.agents.models.execution import ReflectionDecision, ReflectionResult
 from app.agents.models.plan import Plan
 from app.agents.models.task import Task, TaskStatus
 from app.agents.planner import Planner
@@ -50,15 +50,14 @@ class CoordinatorResult:
         plan: The plan that was executed (for auditing).
         state: The final agent state.
         iterations: Number of plan→execute→reflect cycles.
-        needs_more_work: Whether the agent thinks more work is needed
-            (limited by max_iterations).
+        final_decision: The last reflection decision before stopping.
     """
 
     final_answer: str
     plan: Plan | None
     state: AgentState
     iterations: int
-    needs_more_work: bool
+    final_decision: ReflectionDecision = ReflectionDecision.ACCEPT
 
 
 class Coordinator:
@@ -167,19 +166,21 @@ class Coordinator:
 
                     # Step 3 — Reflect.
                     assessment = await self._reflection.reflect(result)
-                    if assessment.needs_more_work:
-                        follow_up_tasks = self._create_follow_ups(
-                            assessment=assessment,
-                            base_id=task.id,
-                        )
-                        for ft in follow_up_tasks:
-                            graph.add_task(ft, depends_on=[task.id])
+                    handled = self._handle_reflection_decision(
+                        decision=assessment.decision,
+                        assessment=assessment,
+                        graph=graph,
+                        task=task,
+                    )
+                    if handled == "abort":
+                        state.record_error(assessment.reason)
+                        break
 
             state.iteration += 1
 
             # Check whether the result is satisfactory.
             final_assessment = await self._reflect_on_plan(state)
-            if not final_assessment.needs_more_work:
+            if final_assessment.decision is ReflectionDecision.ACCEPT:
                 break
 
         # Assemble final answer.
@@ -196,7 +197,11 @@ class Coordinator:
             plan=state.plan,
             state=state,
             iterations=state.iteration,
-            needs_more_work=state.is_exhausted and not state.has_errors,
+            final_decision=(
+                ReflectionDecision.ABORT
+                if state.has_errors
+                else ReflectionDecision.ACCEPT
+            ),
         )
 
     # ------------------------------------------------------------------
@@ -219,30 +224,54 @@ class Coordinator:
         return graph
 
     @staticmethod
-    def _create_follow_ups(
-        assessment: object,
-        base_id: str,
-    ) -> list[Task]:
-        """Create follow-up tasks from a reflection assessment.
+    def _handle_reflection_decision(
+        decision: ReflectionDecision,
+        assessment: ReflectionResult,
+        graph: TaskGraph,
+        task: Task,
+    ) -> str:
+        """Handle a reflection decision by mutating the task graph.
 
         Args:
-            assessment: The reflection result with suggested next tasks.
-            base_id: The task ID that was reflected on.
+            decision: The reflection decision.
+            assessment: The full reflection result.
+            graph: The task graph to mutate.
+            task: The task that was reflected on.
 
         Returns:
-            A list of new tasks.
+            A signal string: ``"continue"``, ``"abort"``.
         """
-        if not isinstance(assessment, ReflectionResult):
-            return []
+        match decision:
+            case ReflectionDecision.ACCEPT:
+                return "continue"
 
-        return [
-            Task(
-                id=str(uuid4()),
-                description=desc,
-                dependencies=[base_id],
-            )
-            for desc in assessment.next_tasks
-        ]
+            case ReflectionDecision.RETRY:
+                follow_up = Task(
+                    id=str(uuid4()),
+                    description=task.description,
+                    dependencies=[task.id],
+                    tool_name=task.tool_name,
+                )
+                graph.add_task(follow_up, depends_on=[task.id])
+                return "continue"
+
+            case ReflectionDecision.REPLAN:
+                for desc in assessment.next_tasks:
+                    follow_up = Task(
+                        id=str(uuid4()),
+                        description=desc,
+                        dependencies=[task.id],
+                    )
+                    graph.add_task(follow_up, depends_on=[task.id])
+                return "continue"
+
+            case ReflectionDecision.ASK_USER:
+                return "continue"
+
+            case ReflectionDecision.ABORT:
+                return "abort"
+
+        return "continue"
 
     async def _reflect_on_plan(self, state: AgentState) -> ReflectionResult:
         """Evaluate overall progress using the LLM.
@@ -256,7 +285,7 @@ class Coordinator:
         summary = self._build_summary(state)
         if not summary:
             return ReflectionResult(
-                needs_more_work=False,
+                decision=ReflectionDecision.ACCEPT,
                 reason="No tasks were executed.",
                 confidence=1.0,
             )
@@ -287,14 +316,19 @@ class Coordinator:
                 if isinstance(block, TextBlock):
                     text += block.text
 
+            decision = (
+                ReflectionDecision.ACCEPT
+                if "no" in text.lower()[:100]
+                else ReflectionDecision.RETRY
+            )
             return ReflectionResult(
-                needs_more_work="no" not in text.lower()[:100],
+                decision=decision,
                 reason=text[:500],
                 confidence=0.7,
             )
         except Exception:
             return ReflectionResult(
-                needs_more_work=False,
+                decision=ReflectionDecision.ACCEPT,
                 reason="Reflection LLM call failed; accepting current result.",
                 confidence=0.5,
             )
@@ -319,7 +353,7 @@ class Coordinator:
             output_preview = (result.output or "")[:200]
             lines.append(f"  {task_id} [{status}]: {output_preview}")
 
-        lines.append("\nIs the goal fully achieved? Answer yes or no with a brief reason.")
+        lines.append("\nIs the goal fully achieved? Answer 'accept' or 'retry' with a brief reason.")
         return "\n".join(lines)
 
     def _assemble_answer(self, state: AgentState) -> str:
