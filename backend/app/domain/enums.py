@@ -96,6 +96,10 @@ class StreamEventType(StrEnum):
     ERROR = "error"
     DONE = "done"
     METADATA = "metadata"
+    PLAN = "plan"
+    TASK_PROGRESS = "task_progress"
+    REFLECTION = "reflection"
+    ARTIFACT = "artifact"
 
 
 class AttachmentType(StrEnum):

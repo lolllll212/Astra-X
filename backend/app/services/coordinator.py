@@ -5,12 +5,12 @@ router. It is responsible for:
 
 * **Stream orchestration** — yielding the correct sequence of events for
   every chat interaction.
-* **Tool execution** — intercepting ``ToolCallBlock`` from the LLM,
-  invoking the tool via the :class:`ToolExecutor`, and feeding the result
-  back to the LLM.
-* **Multi-step reasoning** — driving the think → act → observe loop until
-  the LLM produces a final answer, max iterations is reached, or no tools
-  are called.
+* **Agent pipeline** — planning, parallel task execution, and reflection
+  when agent components are provided.
+* **Tool execution** — intercepting tool calls from the LLM, invoking
+  the tool via the :class:`ToolExecutor`, and feeding the result back.
+* **Multi-step reasoning** — driving the plan -> execute -> reflect loop
+  until the goal is achieved or max iterations is reached.
 * **Pipeline enrichment** — inserting ``StreamStartEvent`` before the
   first event and ``StreamUsageEvent`` / ``StreamDoneEvent`` after.
 
@@ -22,10 +22,19 @@ generators end-to-end.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from uuid import uuid4
 
+from app.agents.base import AgentConfig
+from app.agents.executor import Executor as AgentExecutor
+from app.agents.memory_manager import MemoryManager
+from app.agents.models.execution import ExecutionResult, ReflectionResult
+from app.agents.models.task import Task, TaskStatus
+from app.agents.planner import Planner
+from app.agents.reflection import Reflection
+from app.agents.task_graph import TaskGraph
 from app.core.logging import get_logger
 from app.domain.conversation import Conversation
 from app.domain.enums import MessageRole
@@ -36,15 +45,20 @@ from app.domain.message import (
     ToolResultBlock,
 )
 from app.domain.stream import (
+    ArtifactEvent,
+    PlanEvent,
+    PlannedTaskSchema,
+    ReflectionEvent,
     StreamDoneEvent,
     StreamEvent,
     StreamMetadataEvent,
     StreamStartEvent,
     StreamUsageEvent,
+    TaskProgressEvent,
     ToolProgressEvent,
     ToolResultStreamEvent,
 )
-from app.llm.models import CompletionRequest, CompletionResponse, GenerationParams
+from app.llm.models import CompletionRequest, GenerationParams
 from app.llm.router import LLMRouter
 from app.tools.context import ToolContext as ToolExecContext
 from app.tools.executor import ToolExecutor
@@ -53,10 +67,20 @@ from app.tools.registry import ToolRegistry
 logger = get_logger(__name__)
 
 _MAX_TOOL_ITERATIONS = 10
+_MAX_AGENT_ITERATIONS = 5
 
 
 class ChatCoordinator:
     """Orchestrates a single chat interaction as an event pipeline.
+
+    Supports two modes:
+
+    * **Agent mode** — when ``planner``, ``executor``, and ``reflection``
+      are provided, the coordinator runs the full plan -> execute -> reflect
+      loop, yielding ``PlanEvent``, ``TaskProgressEvent``, ``ReflectionEvent``,
+      and ``ArtifactEvent``.
+    * **Legacy mode** — falls back to the simple tool-calling loop when
+      no agent components are given.
 
     Usage::
 
@@ -64,6 +88,10 @@ class ChatCoordinator:
             llm_router=router,
             tool_registry=registry,
             tool_executor=executor,
+            planner=planner,
+            executor=agent_executor,
+            reflection=reflection,
+            memory_manager=memory_manager,
         )
         async for event in coordinator.run(
             conversation=conversation,
@@ -78,10 +106,25 @@ class ChatCoordinator:
         llm_router: LLMRouter,
         tool_registry: ToolRegistry | None = None,
         tool_executor: ToolExecutor | None = None,
+        planner: Planner | None = None,
+        agent_executor: AgentExecutor | None = None,
+        reflection: Reflection | None = None,
+        memory_manager: MemoryManager | None = None,
+        agent_config: AgentConfig | None = None,
     ) -> None:
         self._llm_router = llm_router
         self._tool_registry = tool_registry
         self._tool_executor = tool_executor
+        self._planner = planner
+        self._agent_executor = agent_executor
+        self._reflection = reflection
+        self._memory_manager = memory_manager
+        self._agent_config = agent_config or AgentConfig()
+
+    @property
+    def _has_agent_pipeline(self) -> bool:
+        """Whether agent components have been wired in."""
+        return all((self._planner, self._agent_executor, self._reflection))
 
     async def run(
         self,
@@ -100,14 +143,12 @@ class ChatCoordinator:
 
         1. Yields ``StreamStartEvent``.
         2. Yields ``StreamMetadataEvent`` with conversation / model info.
-        3. Enters the tool-calling loop:
-           a. Sends messages (with tool schemas) to the LLM via streaming.
-           b. Collects events — text deltas, tool calls, usage.
-           c. If the LLM emitted tool calls: yields ``ToolProgressEvent``
-              and ``ToolResultStreamEvent``, feeds results back, repeats.
-           d. If no tool calls: the message is the final answer.
-        4. Yields ``StreamUsageEvent`` (cumulative).
-        5. Yields ``StreamDoneEvent``.
+        3. If agent components are wired: runs the plan -> execute -> reflect
+           loop, yielding plan, task progress, reflection, and artifact events,
+           then streams the final answer as text deltas.
+        4. Otherwise: runs the legacy tool-calling loop.
+        5. Yields ``StreamUsageEvent`` (cumulative).
+        6. Yields ``StreamDoneEvent``.
 
         Args:
             conversation: The conversation being continued.
@@ -133,12 +174,270 @@ class ChatCoordinator:
             provider=provider or conversation.metadata.provider or "",
         )
 
-        prompt_messages = list(messages)
-
-        # Inject tool schemas so the LLM knows what it can call.
-        prompt_messages = _inject_tool_schemas(prompt_messages, self._tool_registry)
-
         cumulative_usage: StreamUsageEvent | None = None
+
+        if self._has_agent_pipeline:
+            async for event in self._run_agent_pipeline(
+                conversation=conversation,
+                messages=messages,
+                user_message=user_message,
+                model=model,
+                provider=provider,
+                params=params,
+            ):
+                match event:
+                    case StreamUsageEvent():
+                        cumulative_usage = event
+                        continue
+                    case _:
+                        yield event
+        else:
+            async for event in self._run_legacy_pipeline(
+                conversation=conversation,
+                messages=messages,
+                model=model,
+                provider=provider,
+                params=params,
+            ):
+                match event:
+                    case StreamUsageEvent():
+                        cumulative_usage = event
+                        continue
+                    case _:
+                        yield event
+
+        if cumulative_usage is not None:
+            yield cumulative_usage
+        yield StreamDoneEvent(finish_reason="stop")
+
+    async def run_nonstream(
+        self,
+        *,
+        conversation: Conversation,
+        messages: list[Message],
+        user_message: Message,
+        model: str | None = None,
+        provider: str | None = None,
+        params: GenerationParams | None = None,
+        assistant_message_id: str | None = None,
+    ) -> str:
+        """Run the pipeline in non-streaming mode.
+
+        Args:
+            Same as :meth:`run`.
+
+        Returns:
+            The assistant's response text.
+        """
+        from app.llm.streaming import collect_stream
+
+        collector = await collect_stream(
+            self.run(
+                conversation=conversation,
+                messages=messages,
+                user_message=user_message,
+                model=model,
+                provider=provider,
+                params=params,
+                assistant_message_id=assistant_message_id,
+            ),
+            conversation_id=conversation.id,
+        )
+        return collector.build_message()
+
+    # ------------------------------------------------------------------
+    # Agent pipeline — plan, execute, reflect, stream answer
+    # ------------------------------------------------------------------
+
+    async def _run_agent_pipeline(
+        self,
+        *,
+        conversation: Conversation,
+        messages: list[Message],
+        user_message: Message,
+        model: str | None,
+        provider: str | None,
+        params: GenerationParams | None,
+    ) -> AsyncIterator[StreamEvent]:
+        """Full agent pipeline: plan -> execute (parallel) -> reflect -> answer."""
+        goal = _extract_user_goal(user_message)
+        memory_context: str | None = None
+
+        if self._memory_manager is not None:
+            memory_context = await self._memory_manager.get_context(
+                conversation_id=conversation.id,
+                goal=goal,
+            )
+
+        iteration = 0
+        all_task_outputs: dict[str, list[str]] = {}
+
+        while iteration < _MAX_AGENT_ITERATIONS:
+            iteration += 1
+
+            # Step 1 — Plan
+            plan = await self._planner.plan(
+                goal=goal,
+                context=memory_context,
+            )
+            yield PlanEvent(
+                goal=plan.goal,
+                tasks=[
+                    PlannedTaskSchema(
+                        id=t.id,
+                        description=t.description,
+                        status=t.status.value,
+                        dependencies=list(t.dependencies),
+                        tool_name=t.tool_name,
+                    )
+                    for t in plan.tasks
+                ],
+                iteration=iteration - 1,
+            )
+
+            # Step 2 — Execute tasks (parallel via TaskGraph)
+            graph = TaskGraph()
+            for task in plan.tasks:
+                graph.add_task(task, depends_on=task.dependencies)
+
+            completed_results: dict[str, ExecutionResult] = {}
+            reflection = ReflectionResult(
+                needs_more_work=False,
+                reason="Initial execution.",
+                confidence=0.0,
+            )
+
+            while not graph.is_complete():
+                ready_tasks = graph.get_ready()
+                if not ready_tasks:
+                    logger.warning("coordinator.no_ready_tasks")
+                    break
+
+                for task in ready_tasks:
+                    graph.update_status(task.id, TaskStatus.RUNNING)
+                    yield TaskProgressEvent(
+                        task_id=task.id,
+                        description=task.description,
+                        status="running",
+                    )
+
+                # Execute ready tasks concurrently.
+                async def run_task(task: Task) -> ExecutionResult:
+                    result = await self._agent_executor.execute(task)
+                    return result
+
+                tasks_with_ids = [(t, run_task(t)) for t in ready_tasks]
+                results = await asyncio.gather(
+                    *(coro for _, coro in tasks_with_ids),
+                    return_exceptions=True,
+                )
+
+                for task, result_or_exc in zip(ready_tasks, results):
+                    if isinstance(result_or_exc, Exception):
+                        graph.update_status(task.id, TaskStatus.FAILED)
+                        yield TaskProgressEvent(
+                            task_id=task.id,
+                            description=task.description,
+                            status="failed",
+                            error=str(result_or_exc),
+                        )
+                        continue
+
+                    result: ExecutionResult = result_or_exc
+                    completed_results[result.task_id] = result
+                    task_outputs = all_task_outputs.setdefault(task.id, [])
+                    if result.output:
+                        task_outputs.append(result.output)
+
+                    new_status = (
+                        TaskStatus.COMPLETED
+                        if result.status is TaskStatus.COMPLETED
+                        else TaskStatus.FAILED
+                    )
+                    graph.update_status(task.id, new_status)
+
+                    yield TaskProgressEvent(
+                        task_id=task.id,
+                        description=task.description,
+                        status=new_status.value,
+                        result=result.output,
+                        error=result.error,
+                    )
+
+                    # Yield any artifacts from the execution metadata.
+                    task_artifacts = result.metadata.get("artifacts", [])
+                    if isinstance(task_artifacts, list):
+                        for artifact in task_artifacts:
+                            if isinstance(artifact, dict):
+                                yield ArtifactEvent(
+                                    task_id=task.id,
+                                    label=artifact.get("label", ""),
+                                    artifact_type=artifact.get("type", "json"),
+                                    data=artifact.get("data", artifact),
+                                    metadata=artifact.get("metadata", {}),
+                                )
+
+                    # Store result in memory if manager is available.
+                    if self._memory_manager is not None:
+                        await self._memory_manager.store_result(
+                            conversation_id=conversation.id,
+                            result=result,
+                        )
+
+                # Step 3 — Reflect on this batch.
+                for task in ready_tasks:
+                    if task.id in completed_results:
+                        assessment = await self._reflection.reflect(
+                            completed_results[task.id],
+                        )
+                        reflection = assessment
+                        yield ReflectionEvent(
+                            needs_more_work=assessment.needs_more_work,
+                            feedback=assessment.feedback,
+                            reason=assessment.reason,
+                            confidence=assessment.confidence,
+                            iteration=iteration - 1,
+                        )
+
+                        if assessment.needs_more_work and assessment.next_tasks:
+                            for desc in assessment.next_tasks:
+                                follow_up = Task(
+                                    id=str(uuid4()),
+                                    description=desc,
+                                    dependencies=[task.id],
+                                )
+                                graph.add_task(follow_up, depends_on=[task.id])
+
+            # Check overall plan completeness.
+            if not reflection.needs_more_work:
+                break
+
+        # Step 4 — Stream the final answer.
+        async for event in self._stream_final_answer(
+            goal=goal,
+            completed_results=completed_results,
+            conversation=conversation,
+            model=model,
+            provider=provider,
+            params=params,
+        ):
+            yield event
+
+    # ------------------------------------------------------------------
+    # Legacy pipeline — simple tool-calling loop
+    # ------------------------------------------------------------------
+
+    async def _run_legacy_pipeline(
+        self,
+        *,
+        conversation: Conversation,
+        messages: list[Message],
+        model: str | None,
+        provider: str | None,
+        params: GenerationParams | None,
+    ) -> AsyncIterator[StreamEvent]:
+        """Simple tool-calling loop for backwards compatibility."""
+        prompt_messages = _inject_tool_schemas(list(messages), self._tool_registry)
 
         for _ in range(_MAX_TOOL_ITERATIONS):
             llm_request = CompletionRequest(
@@ -155,15 +454,7 @@ class ChatCoordinator:
 
             async for event in self._llm_router.generate_stream(llm_request):
                 collector.feed(event)
-
-                match event:
-                    case StreamUsageEvent():
-                        cumulative_usage = event
-                        continue
-                    case StreamDoneEvent():
-                        continue
-                    case _:
-                        yield event
+                yield event
 
             assistant_message = collector.build_message()
             tool_call_blocks = [
@@ -172,12 +463,10 @@ class ChatCoordinator:
             ]
 
             if not tool_call_blocks:
-                break
+                return
 
-            # Add the assistant message (with tool calls) to the history.
             prompt_messages.append(assistant_message)
 
-            # Execute each tool and feed results back.
             for tc_block in tool_call_blocks:
                 yield ToolProgressEvent(
                     tool_name=tc_block.tool_name,
@@ -187,7 +476,7 @@ class ChatCoordinator:
 
                 tool_context = ToolExecContext(
                     conversation_id=conversation.id,
-                    logger=logger,  # type: ignore[arg-type]
+                    logger=logger,
                 )
 
                 from app.tools.models import ToolCall as ToolCallModel
@@ -197,7 +486,7 @@ class ChatCoordinator:
                     arguments=tc_block.arguments,
                 )
 
-                result = await self._tool_executor.execute(tool_call_model, tool_context)  # type: ignore[union-attr]
+                result = await self._tool_executor.execute(tool_call_model, tool_context)
 
                 yield ToolResultStreamEvent(
                     tool_name=tc_block.tool_name,
@@ -229,50 +518,80 @@ class ChatCoordinator:
                 iterations=_MAX_TOOL_ITERATIONS,
             )
 
-        if cumulative_usage is not None:
-            yield cumulative_usage
-        yield StreamDoneEvent(finish_reason="stop")
+    # ------------------------------------------------------------------
+    # Final answer synthesis
+    # ------------------------------------------------------------------
 
-    async def run_nonstream(
+    async def _stream_final_answer(
         self,
         *,
+        goal: str,
+        completed_results: dict[str, ExecutionResult],
         conversation: Conversation,
-        messages: list[Message],
-        user_message: Message,
-        model: str | None = None,
-        provider: str | None = None,
-        params: GenerationParams | None = None,
-        assistant_message_id: str | None = None,
-    ) -> CompletionResponse:
-        """Run the pipeline in non-streaming mode.
+        model: str | None,
+        provider: str | None,
+        params: GenerationParams | None,
+    ) -> AsyncIterator[StreamEvent]:
+        """Synthesize collected task outputs into a streaming final answer."""
+        parts: list[str] = []
+        for result in completed_results.values():
+            if result.output:
+                parts.append(result.output)
 
-        Args:
-            Same as :meth:`run`.
+        if not parts:
+            yield TextBlock(
+                text="I was unable to produce a result. Please try rephrasing your request.",
+            )
+            return
 
-        Returns:
-            A complete :class:`CompletionResponse`.
-        """
-        from app.llm.streaming import collect_stream
+        # Use the LLM to generate a polished final answer from collected results.
+        synthesis_prompt = (
+            "You have completed research or analysis on the following goal:\n\n"
+            f"GOAL: {goal}\n\n"
+            "Here are the collected findings:\n\n"
+            + "\n\n".join(parts)
+            + "\n\n"
+            "Synthesize these findings into a clear, well-structured final answer "
+            "for the user. Do not mention that you are synthesizing — just provide "
+            "the answer directly."
+        )
 
-        collector = await collect_stream(
-            self.run(
-                conversation=conversation,
-                messages=messages,
-                user_message=user_message,
-                model=model,
-                provider=provider,
-                params=params,
-                assistant_message_id=assistant_message_id,
-            ),
+        synthesis_message = Message(
+            id=str(uuid4()),
             conversation_id=conversation.id,
+            role=MessageRole.USER,
+            content=[TextBlock(text=synthesis_prompt)],
+            created_at=datetime.now(UTC),
         )
 
-        return CompletionResponse(
-            message=collector.build_message(),
-            usage=collector.usage,
-            finish_reason=collector.finish_reason,
+        llm_request = CompletionRequest(
+            messages=[synthesis_message],
             model=model or conversation.metadata.model or "",
+            provider=provider or conversation.metadata.provider,
+            params=params or GenerationParams(),
+            stream=True,
         )
+
+        from app.llm.streaming import StreamCollector
+
+        collector = StreamCollector(conversation_id=conversation.id)
+
+        async for event in self._llm_router.generate_stream(llm_request):
+            collector.feed(event)
+            yield event
+
+
+# ------------------------------------------------------------------
+# Helpers
+# ------------------------------------------------------------------
+
+
+def _extract_user_goal(user_message: Message) -> str:
+    """Extract the user's goal text from their message."""
+    for block in user_message.content:
+        if isinstance(block, TextBlock):
+            return block.text
+    return ""
 
 
 def _inject_tool_schemas(

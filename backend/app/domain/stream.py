@@ -16,6 +16,10 @@ from app.domain.enums import StreamEventType
 from app.domain.message import ToolCallBlock
 
 __all__ = [
+    "ArtifactEvent",
+    "PlanEvent",
+    "PlannedTaskSchema",
+    "ReflectionEvent",
     "StreamCitationEvent",
     "StreamDoneEvent",
     "StreamErrorEvent",
@@ -23,6 +27,7 @@ __all__ = [
     "StreamMetadataEvent",
     "StreamStartEvent",
     "StreamUsageEvent",
+    "TaskProgressEvent",
     "TextDeltaEvent",
     "ThinkingEvent",
     "ToolCallDeltaEvent",
@@ -260,6 +265,74 @@ class StreamMetadataEvent(BaseModel):
     )
 
 
+class PlannedTaskSchema(BaseModel):
+    """Summary of a single task within a plan, for frontend display."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    id: str = Field(description="Unique task identifier.")
+    description: str = Field(min_length=1, description="What the task does.")
+    status: str = Field(default="pending", description="Task status for display.")
+    dependencies: list[str] = Field(default_factory=list, description="Dependency task IDs.")
+    tool_name: str | None = Field(default=None, description="Tool to invoke.")
+
+
+class PlanEvent(BaseModel):
+    """Emitted when the planner completes and a plan is ready."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    type: StreamEventType = StreamEventType.PLAN
+    goal: str = Field(min_length=1, description="The original user goal.")
+    tasks: list[PlannedTaskSchema] = Field(description="All planned tasks.")
+    iteration: int = Field(default=0, description="Which plan→execute→reflect cycle this belongs to.")
+
+
+class TaskProgressEvent(BaseModel):
+    """Emitted when a task's lifecycle status changes."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    type: StreamEventType = StreamEventType.TASK_PROGRESS
+    task_id: str = Field(description="The task whose status changed.")
+    description: str = Field(min_length=1, description="Task description.")
+    status: str = Field(description="New status: 'running', 'completed', 'failed', 'skipped'.")
+    result: str | None = Field(default=None, description="Output if completed.")
+    error: str | None = Field(default=None, description="Error message if failed.")
+
+
+class ReflectionEvent(BaseModel):
+    """Emitted after the reflection step evaluates execution quality."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    type: StreamEventType = StreamEventType.REFLECTION
+    needs_more_work: bool = Field(description="Whether more tasks are needed.")
+    feedback: str | None = Field(default=None, description="Qualitative assessment.")
+    reason: str = Field(description="Explanation of the decision.")
+    confidence: float = Field(ge=0.0, le=1.0, description="Confidence in the result (0-1).")
+    iteration: int = Field(default=0, description="Which cycle this reflection belongs to.")
+
+
+class ArtifactEvent(BaseModel):
+    """Emitted when a tool produces a structured artifact alongside text output.
+
+    Artifacts allow tools to return rich data (code blocks, tables, charts,
+    file references) that the frontend can render natively.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    type: StreamEventType = StreamEventType.ARTIFACT
+    task_id: str = Field(description="The task that produced this artifact.")
+    label: str = Field(default="", description="Human-readable label for the artifact.")
+    artifact_type: str = Field(
+        description="Type: 'code', 'table', 'image', 'file', 'chart', 'json', 'markdown'.",
+    )
+    data: object = Field(description="Structured artifact data.")
+    metadata: dict[str, object] = Field(default_factory=dict, description="Arbitrary metadata.")
+
+
 StreamEvent = (
     StreamStartEvent
     | ThinkingEvent
@@ -274,5 +347,9 @@ StreamEvent = (
     | StreamErrorEvent
     | StreamDoneEvent
     | StreamMetadataEvent
+    | PlanEvent
+    | TaskProgressEvent
+    | ReflectionEvent
+    | ArtifactEvent
 )
 """Union of all possible streaming event types."""

@@ -32,6 +32,10 @@ from app.tools.executor import ToolExecutor
 from app.tools.registry import ToolRegistry
 
 if TYPE_CHECKING:
+    from app.agents.executor import Executor as AgentExecutor
+    from app.agents.memory_manager import MemoryManager
+    from app.agents.planner import Planner
+    from app.agents.reflection import Reflection
     from app.services.context_builder import ContextBuilder
     from app.services.conversation_service import ConversationService
     from app.services.memory_service import MemoryService
@@ -81,6 +85,10 @@ class ChatService:
         context_builder: ContextBuilder | None = None,
         prompt_builder: PromptBuilder | None = None,
         token_counter: TokenCounter | None = None,
+        planner: Planner | None = None,
+        agent_executor: AgentExecutor | None = None,
+        reflection: Reflection | None = None,
+        memory_manager: MemoryManager | None = None,
     ) -> None:
         self._conversation_repo = conversation_repo
         self._message_repo = message_repo
@@ -90,6 +98,12 @@ class ChatService:
         # Tool system
         self._tool_registry = tool_registry
         self._tool_executor = tool_executor
+
+        # Agent framework components (optional).
+        self._planner = planner
+        self._agent_executor = agent_executor
+        self._reflection = reflection
+        self._memory_manager = memory_manager
 
         # Optional sub-services — wired once they are implemented.
         self._conversation_service = conversation_service
@@ -420,6 +434,10 @@ class ChatService:
             llm_router=self._llm_router,
             tool_registry=self._tool_registry,
             tool_executor=self._tool_executor,
+            planner=self._planner,
+            agent_executor=self._agent_executor,
+            reflection=self._reflection,
+            memory_manager=self._memory_manager,
         )
         collector = StreamCollector(
             conversation_id=conversation_id,
