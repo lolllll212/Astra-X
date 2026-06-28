@@ -28,6 +28,8 @@ __all__ = [
     "ToolCallDeltaEvent",
     "ToolCallEndEvent",
     "ToolCallStartEvent",
+    "ToolProgressEvent",
+    "ToolResultStreamEvent",
 ]
 
 
@@ -130,6 +132,54 @@ class ToolCallEndEvent(BaseModel):
         )
 
 
+class ToolProgressEvent(BaseModel):
+    """Emitted while a tool is executing (status updates for the frontend)."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    type: StreamEventType = StreamEventType.TOOL_PROGRESS
+    tool_name: str = Field(
+        min_length=1,
+        description="Name of the tool being executed.",
+    )
+    status: str = Field(
+        description="Execution status: 'running', 'completed', 'failed'.",
+    )
+    message: str = Field(
+        default="",
+        description="Human-readable progress message.",
+    )
+
+
+class ToolResultStreamEvent(BaseModel):
+    """Emitted when a tool completes execution with its output."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    type: StreamEventType = StreamEventType.TOOL_RESULT
+    tool_name: str = Field(
+        min_length=1,
+        description="Name of the tool that was executed.",
+    )
+    tool_call_id: str = Field(
+        min_length=1,
+        description="Correlates this result to the originating tool call.",
+    )
+    output: str = Field(
+        default="",
+        description="Text output produced by the tool.",
+    )
+    is_error: bool = Field(
+        default=False,
+        description="Whether the tool execution failed.",
+    )
+    duration_ms: int | None = Field(
+        default=None,
+        ge=0,
+        description="Execution time in milliseconds.",
+    )
+
+
 class StreamCitationEvent(BaseModel):
     """Emitted when the provider includes a source citation."""
 
@@ -217,6 +267,8 @@ StreamEvent = (
     | ToolCallStartEvent
     | ToolCallDeltaEvent
     | ToolCallEndEvent
+    | ToolProgressEvent
+    | ToolResultStreamEvent
     | StreamCitationEvent
     | StreamUsageEvent
     | StreamErrorEvent

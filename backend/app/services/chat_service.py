@@ -28,6 +28,8 @@ from app.domain.stream import StreamEvent
 from app.domain.usage import Usage
 from app.llm.models import CompletionRequest, CompletionResponse, GenerationParams
 from app.llm.router import LLMRouter
+from app.tools.executor import ToolExecutor
+from app.tools.registry import ToolRegistry
 
 if TYPE_CHECKING:
     from app.services.context_builder import ContextBuilder
@@ -72,6 +74,8 @@ class ChatService:
         message_repo: MessageRepository,
         usage_repo: UsageRepository,
         llm_router: LLMRouter,
+        tool_registry: ToolRegistry | None = None,
+        tool_executor: ToolExecutor | None = None,
         conversation_service: ConversationService | None = None,
         memory_service: MemoryService | None = None,
         context_builder: ContextBuilder | None = None,
@@ -82,6 +86,10 @@ class ChatService:
         self._message_repo = message_repo
         self._usage_repo = usage_repo
         self._llm_router = llm_router
+
+        # Tool system
+        self._tool_registry = tool_registry
+        self._tool_executor = tool_executor
 
         # Optional sub-services — wired once they are implemented.
         self._conversation_service = conversation_service
@@ -408,7 +416,11 @@ class ChatService:
             )
 
         assistant_message_id = str(uuid4())
-        coordinator = ChatCoordinator(llm_router=self._llm_router)
+        coordinator = ChatCoordinator(
+            llm_router=self._llm_router,
+            tool_registry=self._tool_registry,
+            tool_executor=self._tool_executor,
+        )
         collector = StreamCollector(
             conversation_id=conversation_id,
             message_id=assistant_message_id,

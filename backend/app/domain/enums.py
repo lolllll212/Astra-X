@@ -89,6 +89,8 @@ class StreamEventType(StrEnum):
     TOOL_CALL_START = "tool_call_start"
     TOOL_CALL_DELTA = "tool_call_delta"
     TOOL_CALL_END = "tool_call_end"
+    TOOL_PROGRESS = "tool_progress"
+    TOOL_RESULT = "tool_result"
     CITATION = "citation"
     USAGE = "usage"
     ERROR = "error"

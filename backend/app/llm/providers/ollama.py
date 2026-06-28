@@ -5,22 +5,13 @@ Communicates with a local Ollama server via its REST API.
 
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncIterator
-from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
 import httpx
 
-from app.domain.enums import MessageRole
-from app.domain.message import (
-    ContentBlock,
-    ImageBlock,
-    Message,
-    TextBlock,
-    ToolCallBlock,
-    ToolResultBlock,
-)
 from app.domain.stream import (
     StreamDoneEvent,
     StreamErrorEvent,
@@ -28,12 +19,11 @@ from app.domain.stream import (
     StreamMetadataEvent,
     StreamUsageEvent,
     TextDeltaEvent,
+    ToolCallEndEvent,
+    ToolCallStartEvent,
 )
-from app.domain.usage import Usage
 from app.llm.base import LLMProvider
 from app.llm.exceptions import (
-    GenerationError,
-    ProviderAuthenticationError,
     ProviderConnectionError,
     ProviderTimeoutError,
 )
@@ -44,8 +34,17 @@ from app.llm.models import (
 )
 
 
-def _domain_to_ollama_messages(messages: list[Message]) -> list[dict[str, Any]]:
+def _domain_to_ollama_messages(
+    messages: list[Any],
+) -> list[dict[str, Any]]:
     """Convert domain messages to Ollama API message format."""
+    from app.domain.message import (
+        ImageBlock,
+        TextBlock,
+        ToolCallBlock,
+        ToolResultBlock,
+    )
+
     result: list[dict[str, Any]] = []
     for msg in messages:
         entry: dict[str, Any] = {"role": msg.role.value}
@@ -76,38 +75,6 @@ def _domain_to_ollama_messages(messages: list[Message]) -> list[dict[str, Any]]:
     return result
 
 
-def _ollama_to_domain_message(
-    data: dict[str, Any],
-    conversation_id: str,
-    message_id: str | None = None,
-) -> Message:
-    """Convert an Ollama response message to a domain Message."""
-    content: list[ContentBlock] = []
-    role_str = data.get("role", "assistant")
-    content_raw = data.get("content", "")
-
-    if content_raw:
-        content.append(TextBlock(text=content_raw))
-
-    for tc in data.get("tool_calls") or []:
-        func = tc.get("function", {})
-        content.append(
-            ToolCallBlock(
-                tool_call_id=str(uuid4()),
-                tool_name=func.get("name", "unknown"),
-                arguments=func.get("arguments", {}),
-            ),
-        )
-
-    return Message(
-        id=message_id or str(uuid4()),
-        conversation_id=conversation_id,
-        role=MessageRole(role_str),
-        content=content or [TextBlock(text="")],
-        created_at=datetime.now(UTC),
-    )
-
-
 class OllamaProvider(LLMProvider):
     """Provider adapter for Ollama."""
 
@@ -131,55 +98,19 @@ class OllamaProvider(LLMProvider):
         self,
         request: CompletionRequest,
     ) -> CompletionResponse:
-        messages = _domain_to_ollama_messages(request.messages)
-        payload: dict[str, Any] = {
-            "model": request.model or self.model_id,
-            "messages": messages,
-            "stream": False,
-            "options": {
-                "temperature": request.params.temperature,
-                "top_p": request.params.top_p,
-                "top_k": request.params.top_k,
-                "num_predict": request.params.max_tokens,
-                "stop": request.params.stop or None,
-            },
-        }
+        from app.llm.streaming import StreamCollector
 
-        try:
-            response = await self._client.post("/api/chat", json=payload)
-            response.raise_for_status()
-            data: dict[str, Any] = response.json()
-        except httpx.TimeoutException as exc:
-            raise ProviderTimeoutError(
-                f"Ollama request timed out after {self._timeout}s",
-            ) from exc
-        except httpx.ConnectError as exc:
-            raise ProviderConnectionError(
-                f"Could not connect to Ollama at {self._base_url}",
-            ) from exc
-        except httpx.HTTPStatusError as exc:
-            if exc.response.status_code == 401:
-                raise ProviderAuthenticationError("Ollama authentication failed") from exc
-            raise GenerationError(
-                f"Ollama returned {exc.response.status_code}: {exc.response.text}",
-            ) from exc
+        conversation_id = request.messages[0].conversation_id if request.messages else ""
+        collector = StreamCollector(conversation_id=conversation_id)
 
-        domain_message = _ollama_to_domain_message(
-            data.get("message", {}),
-            conversation_id=request.messages[0].conversation_id if request.messages else "",
-        )
-        usage_data = data.get("usage") or {}
-        usage = Usage(
-            prompt_tokens=usage_data.get("prompt_tokens", 0),
-            completion_tokens=usage_data.get("completion_tokens", 0),
-            total_tokens=usage_data.get("total_tokens", 0),
-        )
+        async for event in self.generate_stream(request):
+            collector.feed(event)
 
         return CompletionResponse(
-            message=domain_message,
-            usage=usage,
-            finish_reason=FinishReason.STOP if data.get("done") else FinishReason.LENGTH,
-            model=data.get("model", self.model_id),
+            message=collector.build_message(),
+            usage=collector.usage,
+            finish_reason=collector.finish_reason,
+            model=request.model or self.model_id,
         )
 
     async def generate_stream(
@@ -215,9 +146,8 @@ class OllamaProvider(LLMProvider):
                 async for line in resp.aiter_lines():
                     if not line.strip():
                         continue
-                    import json as _json
 
-                    chunk = _json.loads(line)
+                    chunk = json.loads(line)
                     msg_data = chunk.get("message", {})
                     delta = msg_data.get("content", "")
 
@@ -225,6 +155,19 @@ class OllamaProvider(LLMProvider):
                         yield TextDeltaEvent(delta=delta)
 
                     if chunk.get("done"):
+                        for tc in msg_data.get("tool_calls") or []:
+                            func = tc.get("function", {})
+                            tcid = str(uuid4())
+                            yield ToolCallStartEvent(
+                                tool_call_id=tcid,
+                                tool_name=func.get("name", "unknown"),
+                            )
+                            yield ToolCallEndEvent(
+                                tool_call_id=tcid,
+                                tool_name=func.get("name", "unknown"),
+                                arguments=func.get("arguments", {}),
+                            )
+
                         usage_data = chunk.get("usage") or {}
                         pt = usage_data.get("prompt_tokens", 0)
                         ct = usage_data.get("completion_tokens", 0)
