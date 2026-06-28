@@ -1,16 +1,9 @@
-"""Provider and model domain specifications.
-
-Defines the value objects and entities that describe an LLM provider
-backend and the models it serves. These models are used throughout the
-application to route requests, validate capabilities, and manage provider
-configuration.
-"""
-
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
 from app.domain.enums import ModelCapability, ProviderType
 
@@ -24,11 +17,7 @@ __all__ = [
 
 
 class ProviderID(str):
-    """A validated, lowercase provider identifier.
-
-    Wraps a plain string to make provider IDs self-documenting at the
-    type level and to centralise normalisation logic.
-    """
+    """A validated, lowercase provider identifier."""
 
     def __new__(cls, value: str) -> ProviderID:
         normalized = value.strip().lower()
@@ -37,13 +26,15 @@ class ProviderID(str):
             raise ValueError(msg)
         return super().__new__(cls, normalized)
 
+    @classmethod
+    def __get_pydantic_core_schema__(cls, source_type: type, handler: object) -> object:
+        from pydantic_core.core_schema import no_info_plain_validator_function
+
+        return no_info_plain_validator_function(cls)
+
 
 class ModelID(str):
-    """A validated, lowercase model identifier.
-
-    Wraps a plain string so that functions accepting a model ID are
-    unambiguous about the expected format.
-    """
+    """A validated, lowercase model identifier."""
 
     def __new__(cls, value: str) -> ModelID:
         normalized = value.strip().lower()
@@ -52,18 +43,20 @@ class ModelID(str):
             raise ValueError(msg)
         return super().__new__(cls, normalized)
 
+    @classmethod
+    def __get_pydantic_core_schema__(cls, source_type: type, handler: object) -> object:
+        from pydantic_core.core_schema import no_info_plain_validator_function
+
+        return no_info_plain_validator_function(cls)
+
 
 class ProviderAuth(BaseModel):
-    """Authentication credentials for a single provider backend.
-
-    Stored encrypted at rest; never logged or serialised in API responses.
-    """
+    """Authentication credentials for a single provider backend."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    api_key: str | None = Field(
+    api_key: SecretStr | None = Field(
         default=None,
-        min_length=1,
         description="API key or token for the provider.",
     )
     base_url: str | None = Field(
@@ -96,13 +89,33 @@ class ProviderSpec(BaseModel):
         min_length=1,
         description="Human-readable name shown in UI and logs.",
     )
+    is_enabled: bool = Field(
+        default=True,
+        description="Whether this provider is active and can be used for routing.",
+    )
+    base_url: str | None = Field(
+        default=None,
+        description="Base URL for the provider API. Falls back to the type's default.",
+    )
+    api_key: SecretStr | None = Field(
+        default=None,
+        description="Encrypted API key for the provider. Never exposed in responses.",
+    )
     supported_capabilities: frozenset[ModelCapability] = Field(
         default_factory=lambda: frozenset({ModelCapability.CHAT}),
         description="Set of capabilities every model on this provider supports.",
     )
-    default_base_url: str | None = Field(
+    models: list[str] = Field(
+        default_factory=list,
+        description="List of model identifiers this provider can serve.",
+    )
+    created_at: datetime | None = Field(
         default=None,
-        description="Default base URL used when none is provided in auth config.",
+        description="When the provider was registered.",
+    )
+    updated_at: datetime | None = Field(
+        default=None,
+        description="When the provider was last modified.",
     )
 
     @field_validator("supported_capabilities", mode="before")
@@ -120,12 +133,7 @@ class ProviderSpec(BaseModel):
 
 
 class ModelSpec(BaseModel):
-    """Immutable specification of a language model.
-
-    Describes the static properties of a model — its identity, provider,
-    capabilities, context window, and cost — independent of any runtime
-    state.
-    """
+    """Immutable specification of a language model."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 

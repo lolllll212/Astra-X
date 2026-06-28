@@ -11,6 +11,7 @@ AI-related flows through here.
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -23,6 +24,7 @@ from app.database.repositories.usage_repository import UsageRepository
 from app.domain.conversation import Conversation
 from app.domain.enums import MessageRole
 from app.domain.message import ContentBlock, Message
+from app.domain.stream import StreamEvent
 from app.domain.usage import Usage
 from app.llm.models import CompletionRequest, CompletionResponse, GenerationParams
 from app.llm.router import LLMRouter
@@ -177,14 +179,14 @@ class ChatService:
         if self._token_counter is not None:
             prompt_messages = await self._token_counter.trim_to_fit(
                 messages=prompt_messages,
-                model=model or conversation.metadata.model_id,
+                model=model or conversation.metadata.model,
             )
 
         # Step 8 — Route to LLM.
         llm_request = CompletionRequest(
             messages=prompt_messages,
-            model=model or conversation.metadata.model_id or "",
-            provider=provider or conversation.metadata.provider_id,
+            model=model or conversation.metadata.model or "",
+            provider=provider or conversation.metadata.provider,
             params=params or GenerationParams(),
         )
 
@@ -235,9 +237,9 @@ class ChatService:
         :class:`app.llm.streaming.StreamCollector` and the final
         result is returned once the stream completes.
 
-        For true per-event streaming (SSE) the API layer should call
-        the LLM router directly; this method exists for callers that
-        want a streaming-compatible result without managing events.
+        For true per-event streaming (SSE) the API layer should use
+        :meth:`stream_message` instead; this method exists for callers
+        that want a streaming-compatible result without managing events.
 
         Args:
             Same as :meth:`process_message`.
@@ -292,14 +294,14 @@ class ChatService:
         if self._token_counter is not None:
             prompt_messages = await self._token_counter.trim_to_fit(
                 messages=prompt_messages,
-                model=model or conversation.metadata.model_id,
+                model=model or conversation.metadata.model,
             )
 
         # Stream and collect.
         llm_request = CompletionRequest(
             messages=prompt_messages,
-            model=model or conversation.metadata.model_id or "",
-            provider=provider or conversation.metadata.provider_id,
+            model=model or conversation.metadata.model or "",
+            provider=provider or conversation.metadata.provider,
             params=params or GenerationParams(),
             stream=True,
         )
@@ -325,3 +327,112 @@ class ChatService:
             conversation=conversation,
             usage=usage,
         )
+
+    async def stream_message(
+        self,
+        conversation_id: str,
+        user_content: list[ContentBlock],
+        *,
+        model: str | None = None,
+        provider: str | None = None,
+        params: GenerationParams | None = None,
+    ) -> AsyncIterator[StreamEvent]:
+        """Process a user message and yield streaming events in real time.
+
+        This is the async-generator counterpart of :meth:`process_message`.
+        Each event is yielded as soon as it is available, making this method
+        suitable for SSE responses.
+
+        Persistence happens *after* the stream completes — the final
+        assistant message, usage, and conversation update are written once
+        the last event is consumed. Callers must consume all events for
+        persistence to occur.
+
+        Args:
+            Same as :meth:`process_message`.
+
+        Yields:
+            :class:`StreamEvent` instances in real time.
+
+        Raises:
+            ResourceNotFoundError: If the conversation does not exist.
+        """
+        from app.llm.streaming import StreamCollector
+        from app.services.coordinator import ChatCoordinator
+
+        conversation = await self._conversation_repo.get(conversation_id)
+        if conversation is None:
+            from app.core.exceptions import ResourceNotFoundError
+            raise ResourceNotFoundError(
+                message=f"Conversation '{conversation_id}' not found.",
+            )
+
+        user_message = Message(
+            id=str(uuid4()),
+            conversation_id=conversation_id,
+            role=MessageRole.USER,
+            content=user_content,
+            created_at=datetime.now(UTC),
+        )
+        await self._message_repo.add(user_message)
+
+        history = await self._message_repo.list_by_conversation(conversation_id)
+
+        memory_context: str | None = None
+        if self._memory_service is not None:
+            memory_context = await self._memory_service.get_relevant_context(
+                conversation_id=conversation_id,
+                user_content=user_content,
+            )
+
+        context_messages: list[Message] = history
+        if self._context_builder is not None:
+            context_messages = await self._context_builder.build(
+                conversation=conversation,
+                history=history,
+                user_message=user_message,
+                memory_context=memory_context,
+            )
+
+        prompt_messages: list[Message] = context_messages
+        if self._prompt_builder is not None:
+            prompt_messages = await self._prompt_builder.build(
+                conversation=conversation,
+                context_messages=context_messages,
+            )
+
+        if self._token_counter is not None:
+            prompt_messages = await self._token_counter.trim_to_fit(
+                messages=prompt_messages,
+                model=model or conversation.metadata.model,
+            )
+
+        assistant_message_id = str(uuid4())
+        coordinator = ChatCoordinator(llm_router=self._llm_router)
+        collector = StreamCollector(
+            conversation_id=conversation_id,
+            message_id=assistant_message_id,
+        )
+
+        async for event in coordinator.run(
+            conversation=conversation,
+            messages=prompt_messages,
+            user_message=user_message,
+            model=model,
+            provider=provider,
+            params=params,
+            assistant_message_id=assistant_message_id,
+        ):
+            collector.feed(event)
+            yield event
+
+        assistant_message = collector.build_message()
+        await self._message_repo.add(assistant_message)
+
+        usage = collector.usage
+        if usage is not None:
+            await self._usage_repo.add_for_message(assistant_message.id, usage)
+
+        conversation.message_count += 1
+        conversation.updated_at = datetime.now(UTC)
+        await self._conversation_repo.update(conversation)

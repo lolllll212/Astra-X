@@ -8,22 +8,47 @@ as server-sent events (SSE) for the API.
 from __future__ import annotations
 
 from typing import Any
+from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 from app.domain.enums import StreamEventType
 from app.domain.message import ToolCallBlock
 
 __all__ = [
+    "StreamCitationEvent",
     "StreamDoneEvent",
     "StreamErrorEvent",
     "StreamEvent",
     "StreamMetadataEvent",
+    "StreamStartEvent",
+    "StreamUsageEvent",
     "TextDeltaEvent",
+    "ThinkingEvent",
     "ToolCallDeltaEvent",
     "ToolCallEndEvent",
     "ToolCallStartEvent",
 ]
+
+
+class StreamStartEvent(BaseModel):
+    """Emitted before any other event to signal the stream has begun."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    type: StreamEventType = StreamEventType.START
+
+
+class ThinkingEvent(BaseModel):
+    """Emitted when the provider signals it is performing internal reasoning."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    type: StreamEventType = StreamEventType.THINKING
+    thought: str = Field(
+        min_length=1,
+        description="A fragment of the model's internal reasoning.",
+    )
 
 
 class TextDeltaEvent(BaseModel):
@@ -105,6 +130,37 @@ class ToolCallEndEvent(BaseModel):
         )
 
 
+class StreamCitationEvent(BaseModel):
+    """Emitted when the provider includes a source citation."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    type: StreamEventType = StreamEventType.CITATION
+    citation_index: int = Field(
+        ge=0,
+        description="Index of the cited source.",
+    )
+    source: str = Field(
+        min_length=1,
+        description="Source identifier or URL.",
+    )
+    text: str = Field(
+        default="",
+        description="Referenced text snippet.",
+    )
+
+
+class StreamUsageEvent(BaseModel):
+    """Emitted with token usage after generation completes."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    type: StreamEventType = StreamEventType.USAGE
+    prompt_tokens: int = Field(ge=0, description="Tokens in the prompt.")
+    completion_tokens: int = Field(ge=0, description="Tokens in the completion.")
+    total_tokens: int = Field(ge=0, description="Total tokens consumed.")
+
+
 class StreamErrorEvent(BaseModel):
     """Emitted when an error occurs during streaming."""
 
@@ -129,10 +185,6 @@ class StreamDoneEvent(BaseModel):
         default=None,
         description="Provider-specific reason for finishing, if available.",
     )
-    usage: dict[str, int] | None = Field(
-        default=None,
-        description="Token usage summary for the completed generation.",
-    )
 
 
 class StreamMetadataEvent(BaseModel):
@@ -145,21 +197,28 @@ class StreamMetadataEvent(BaseModel):
         description="The conversation this stream belongs to.",
     )
     message_id: str = Field(
-        description="The message ID being streamed.",
+        default_factory=lambda: str(uuid4()),
+        description="The message ID being streamed (auto-generated if omitted).",
     )
-    model_id: str = Field(
+    model: str = Field(
+        validation_alias=AliasChoices("model", "model_id"),
         description="Model serving the response.",
     )
-    provider_id: str = Field(
+    provider: str = Field(
+        validation_alias=AliasChoices("provider", "provider_id"),
         description="Provider serving the response.",
     )
 
 
 StreamEvent = (
-    TextDeltaEvent
+    StreamStartEvent
+    | ThinkingEvent
+    | TextDeltaEvent
     | ToolCallStartEvent
     | ToolCallDeltaEvent
     | ToolCallEndEvent
+    | StreamCitationEvent
+    | StreamUsageEvent
     | StreamErrorEvent
     | StreamDoneEvent
     | StreamMetadataEvent

@@ -10,8 +10,7 @@ Modules that need to execute custom logic at startup or shutdown (e.g.
 memory stores, agent/tool registries, schedulers, metrics collectors)
 may use :func:`register_startup_hook` and :func:`register_shutdown_hook`
 at module level. The registered callables receive the fully-initialised
-:class:`app.core.container.Container` and are awaited in registration
-order.
+container (``object``) and are awaited in registration order.
 """
 
 from __future__ import annotations
@@ -19,14 +18,16 @@ from __future__ import annotations
 import time
 from collections.abc import AsyncIterator, Callable, Coroutine
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from app.core.container import Container
 
 from fastapi import FastAPI
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from app.config.settings import Settings, get_settings
-from app.core.container import Container
 from app.core.exceptions import ConfigurationError
 from app.core.logging import configure_logging, get_logger
 
@@ -37,11 +38,11 @@ logger = get_logger(__name__)
 # without coupling to this module or to each other.
 # ---------------------------------------------------------------------------
 
-StartupHook = Callable[[Container], Coroutine[Any, Any, None]]
+StartupHook = Callable[..., Coroutine[Any, Any, None]]
 """Type alias for a startup hook: an async callable that receives the
 fully-initialised dependency injection container."""
 
-ShutdownHook = Callable[[Container], Coroutine[Any, Any, None]]
+ShutdownHook = Callable[..., Coroutine[Any, Any, None]]
 """Type alias for a shutdown hook: an async callable that receives the
 fully-initialised dependency injection container."""
 
@@ -128,7 +129,7 @@ def _configure_logging(settings: Settings) -> None:
     )
 
 
-async def _build_container(settings: Settings) -> Container:
+async def _build_container(settings: Settings) -> Container | None:
     """Construct and wire the dependency injection container.
 
     Args:
@@ -141,18 +142,13 @@ async def _build_container(settings: Settings) -> Container:
         ConfigurationError: If container initialisation fails.
     """
     logger.info("startup.build_container")
-    try:
-        container = Container()
-        container.config.from_pydantic(settings)
-        container.wire(modules=[])
-        logger.info("startup.container_built")
-        return container
-    except Exception as exc:
-        logger.critical("startup.container_failed", error=str(exc))
-        raise ConfigurationError(
-            message="Failed to initialise the dependency injection container.",
-            cause=exc,
-        ) from exc
+    from app.core.container import Container
+
+    container = Container()
+    container.from_pydantic(settings)
+    container.wire(modules=[])
+    logger.info("startup.container_built")
+    return container
 
 
 async def _build_database_engine(settings: Settings) -> AsyncEngine:
@@ -215,7 +211,7 @@ async def _verify_database_connectivity(engine: AsyncEngine) -> None:
         ) from exc
 
 
-async def _run_startup_hooks(container: Container) -> None:
+async def _run_startup_hooks(container: Container | None) -> None:
     """Execute all registered startup hooks in order.
 
     Each hook receives the fully-initialised container so it can resolve
@@ -240,7 +236,7 @@ async def _run_startup_hooks(container: Container) -> None:
             ) from exc
 
 
-async def _run_shutdown_hooks(container: Container) -> None:
+async def _run_shutdown_hooks(container: Container | None) -> None:
     """Execute all registered shutdown hooks in order.
 
     Failures are logged but do not prevent subsequent hooks from running
@@ -343,12 +339,49 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     container = await _build_container(settings)
     engine = await _build_database_engine(settings)
+
+    import importlib
+    importlib.import_module("app.database.models")
+
+    from app.database.base import Base
+
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
     await _verify_database_connectivity(engine)
     await _run_startup_hooks(container)
 
     app.state.settings = settings
     app.state.container = container
     app.state.db_engine = engine
+
+    # Initialise the LLM router and load enabled providers from the DB.
+    from app.database.repositories.provider_repository import ProviderRepository
+    from app.database.session import create_session_factory, session_context
+    from app.llm.router import LLMRouter
+
+    llm_router = LLMRouter(
+        settings=settings,
+        default_provider_id=settings.default_llm_provider,
+    )
+
+    try:
+        session_factory = create_session_factory(engine)
+        async with session_context(session_factory) as db_session:
+            provider_repo = ProviderRepository(db_session)
+            specs = await provider_repo.list_enabled()
+            if specs:
+                await llm_router.load_providers_from_db(specs)
+                logger.info(
+                    "startup.providers_loaded",
+                    count=len(specs),
+                )
+            else:
+                logger.info("startup.no_providers_found")
+    except Exception as exc:
+        logger.warning("startup.load_providers_failed", error=str(exc))
+
+    app.state.llm_router = llm_router
 
     elapsed: float = time.monotonic() - start_time
     logger.info("startup.complete", elapsed_ms=round(elapsed * 1000))

@@ -26,6 +26,7 @@ from app.domain.stream import (
     StreamErrorEvent,
     StreamEvent,
     StreamMetadataEvent,
+    StreamUsageEvent,
     TextDeltaEvent,
 )
 from app.domain.usage import Usage
@@ -115,8 +116,9 @@ class OllamaProvider(LLMProvider):
         base_url: str = "http://localhost:11434",
         model: str = "llama3.1",
         timeout_seconds: float = 60.0,
+        provider_id: str = "ollama",
     ) -> None:
-        self.provider_id = "ollama"
+        self.provider_id = provider_id
         self.model_id = model
         self._base_url = base_url.rstrip("/")
         self._timeout = timeout_seconds
@@ -203,8 +205,8 @@ class OllamaProvider(LLMProvider):
         yield StreamMetadataEvent(
             conversation_id=conversation_id,
             message_id=message_id,
-            model_id=request.model or self.model_id,
-            provider_id=self.provider_id,
+            model=request.model or self.model_id,
+            provider=self.provider_id,
         )
 
         try:
@@ -224,14 +226,16 @@ class OllamaProvider(LLMProvider):
 
                     if chunk.get("done"):
                         usage_data = chunk.get("usage") or {}
-                        yield StreamDoneEvent(
-                            finish_reason=FinishReason.STOP,
-                            usage={
-                                "prompt_tokens": usage_data.get("prompt_tokens", 0),
-                                "completion_tokens": usage_data.get("completion_tokens", 0),
-                                "total_tokens": usage_data.get("total_tokens", 0),
-                            },
-                        )
+                        pt = usage_data.get("prompt_tokens", 0)
+                        ct = usage_data.get("completion_tokens", 0)
+                        tt = usage_data.get("total_tokens", 0)
+                        if pt or ct or tt:
+                            yield StreamUsageEvent(
+                                prompt_tokens=pt,
+                                completion_tokens=ct,
+                                total_tokens=tt,
+                            )
+                        yield StreamDoneEvent(finish_reason=FinishReason.STOP)
         except httpx.TimeoutException as exc:
             raise ProviderTimeoutError(
                 f"Ollama stream timed out after {self._timeout}s",

@@ -18,15 +18,19 @@ from __future__ import annotations
 import time
 from collections.abc import AsyncIterator, Sequence
 
+from app.config.settings import Settings
 from app.core.logging import get_logger
+from app.domain.provider import ProviderSpec
 from app.domain.stream import StreamEvent
 from app.llm.base import LLMProvider
 from app.llm.exceptions import (
     GenerationError,
+    ProviderAuthenticationError,
     ProviderConnectionError,
     ProviderTimeoutError,
     RouterNoProviderError,
 )
+from app.llm.factory import create_provider_adapter
 from app.llm.models import CompletionRequest, CompletionResponse
 from app.llm.registry import ProviderRegistry
 
@@ -45,10 +49,14 @@ logger = get_logger(__name__)
 class LLMRouter:
     """Orchestrates LLM generation with retry, fallback, and circuit breaking.
 
+    Provider adapters are registered via :meth:`register_adapter` and
+    :meth:`remove_adapter` so that the provider service can sync database
+    state into the in-memory registry at startup and on changes.
+
     Usage::
 
         router = LLMRouter(
-            registry=registry,
+            settings=settings,
             default_provider_id="ollama",
             provider_preference=["ollama", "lm_studio"],
         )
@@ -57,14 +65,15 @@ class LLMRouter:
 
     def __init__(
         self,
-        registry: ProviderRegistry,
+        settings: Settings,
         default_provider_id: str = _DEFAULT_PROVIDER_ID,
         provider_preference: Sequence[str] | None = None,
         max_retries: int = _DEFAULT_MAX_RETRIES,
         circuit_breaker_threshold: int = _DEFAULT_CIRCUIT_THRESHOLD,
         circuit_breaker_reset_seconds: float = _DEFAULT_CIRCUIT_RESET_SECONDS,
     ) -> None:
-        self._registry = registry
+        self._settings = settings
+        self._registry = ProviderRegistry()
         self._default_provider_id = default_provider_id
         self._provider_preference = list(provider_preference) if provider_preference else []
         self._max_retries = max_retries
@@ -73,6 +82,87 @@ class LLMRouter:
 
         self._failure_counts: dict[str, int] = {}
         self._circuit_open_until: dict[str, float] = {}
+
+    # ------------------------------------------------------------------ #
+    # Provider adapter lifecycle — called by ProviderService
+    # ------------------------------------------------------------------ #
+
+    def register_adapter(self, spec: ProviderSpec) -> LLMProvider:
+        """Create and register a provider adapter from a spec.
+
+        The adapter is created via :func:`create_provider_adapter` and
+        stored in the in-memory registry. Subsequent requests will find
+        it immediately.
+
+        Args:
+            spec: The provider specification (from the database).
+
+        Returns:
+            The created adapter instance.
+        """
+        adapter = create_provider_adapter(spec, self._settings)
+        self._registry.register(adapter)
+        logger.info("llm.adapter_registered", provider_id=str(spec.id))
+        return adapter
+
+    def remove_adapter(self, provider_id: str) -> None:
+        """Remove a provider adapter from the in-memory registry.
+
+        Args:
+            provider_id: The provider identifier to remove.
+        """
+        self._registry.remove(provider_id)
+        self._failure_counts.pop(provider_id, None)
+        self._circuit_open_until.pop(provider_id, None)
+        logger.info("llm.adapter_removed", provider_id=provider_id)
+
+    def refresh_adapter(self, spec: ProviderSpec) -> LLMProvider:
+        """Replace an existing adapter with a new one from an updated spec.
+
+        This is equivalent to calling :meth:`remove_adapter` followed by
+        :meth:`register_adapter`.
+
+        Args:
+            spec: The updated provider specification.
+
+        Returns:
+            The new adapter instance.
+        """
+        self.remove_adapter(str(spec.id))
+        return self.register_adapter(spec)
+
+    async def load_providers_from_db(
+        self,
+        specs: list[ProviderSpec],
+    ) -> None:
+        """Load provider specs from the database into the in-memory registry.
+
+        Only enabled providers are registered. Disabled providers are
+        removed from the registry if they were previously registered.
+
+        Args:
+            specs: Provider specs from the database.
+        """
+        enabled_ids: set[str] = set()
+        for spec in specs:
+            if spec.is_enabled and str(spec.id) != "string":
+                enabled_ids.add(str(spec.id))
+                self.register_adapter(spec)
+                logger.info(
+                    "llm.provider_loaded",
+                    provider_id=str(spec.id),
+                    provider_type=spec.provider_type.value,
+                )
+
+        # Remove any previously-registered providers that are no longer
+        # enabled or no longer exist in the DB.
+        for existing in self._registry.list():
+            if existing.provider_id not in enabled_ids:
+                self.remove_adapter(existing.provider_id)
+                logger.info(
+                    "llm.provider_unloaded",
+                    provider_id=existing.provider_id,
+                )
 
     # ------------------------------------------------------------------ #
     # Public API
@@ -101,7 +191,26 @@ class LLMRouter:
         for attempt in range(1 + self._max_retries):
             provider = self._acquire_provider(request, exclude=tried)
             if provider is None:
-                break
+                candidates = self._build_candidate_chain(request.provider)
+                missed = []
+                for pid in candidates:
+                    if pid in tried:
+                        missed.append(f"{pid} (already tried)")
+                    elif self._is_circuit_open(pid):
+                        missed.append(f"{pid} (circuit open)")
+                    elif not self._registry.is_registered(pid):
+                        missed.append(f"{pid} (not registered)")
+                    else:
+                        missed.append(f"{pid} (unknown)")
+                msg = (
+                    f"No provider available for request. "
+                    f"Provider requested: {request.provider!r}, "
+                    f"Default: {self._default_provider_id!r}, "
+                    f"Candidates: {candidates}, "
+                    f"Tried: {list(tried)}, "
+                    f"Registered: {[p.provider_id for p in self._registry.list()]}"
+                )
+                raise RouterNoProviderError(msg)
             tried.add(provider.provider_id)
 
             try:
@@ -127,7 +236,7 @@ class LLMRouter:
                     backoff = min(2.0 ** attempt, 10.0)
                     await self._sleep(backoff)
 
-            except Exception as exc:
+            except (GenerationError, ProviderAuthenticationError) as exc:
                 last_error = exc
                 self._record_failure(provider.provider_id)
                 logger.error(
@@ -145,10 +254,13 @@ class LLMRouter:
             provider=request.provider or self._default_provider_id,
             model=request.model,
             elapsed_ms=round(elapsed_ms),
-            error=str(last_error),
+            error=str(last_error) if last_error else "No provider available",
         )
         raise GenerationError(
-            f"Generation failed after {1 + self._max_retries} attempt(s): {last_error}",
+            f"Generation failed after {1 + self._max_retries} attempt(s). "
+            f"Last error: {last_error}" if last_error else
+            f"Generation failed after {1 + self._max_retries} attempt(s). "
+            f"No provider was available.",
         ) from last_error
 
     async def generate_stream(
@@ -222,10 +334,13 @@ class LLMRouter:
             provider=provider.provider_id if provider else "unknown",
             model=request.model,
             elapsed_ms=round(elapsed_ms),
-            error=str(last_error),
+            error=str(last_error) if last_error else "No provider available",
         )
         raise GenerationError(
-            f"Stream failed after {1 + self._max_retries} attempt(s): {last_error}",
+            f"Stream failed after {1 + self._max_retries} attempt(s): "
+            f"{last_error}" if last_error else
+            f"Stream failed after {1 + self._max_retries} attempt(s). "
+            f"No provider was available.",
         ) from last_error
 
     async def check_health(
@@ -242,7 +357,10 @@ class LLMRouter:
         """
         targets: list[LLMProvider]
         if provider_id is not None:
-            targets = [self._registry.get(provider_id)]
+            try:
+                targets = [self._registry.get(provider_id)]
+            except RouterNoProviderError:
+                return {provider_id: False}
         else:
             targets = self._registry.list()
 

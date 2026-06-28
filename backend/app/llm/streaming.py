@@ -13,9 +13,13 @@ from uuid import uuid4
 from app.domain.enums import MessageRole
 from app.domain.message import ContentBlock, Message, TextBlock, ToolCallBlock
 from app.domain.stream import (
+    StreamCitationEvent,
     StreamDoneEvent,
     StreamEvent,
+    StreamStartEvent,
+    StreamUsageEvent,
     TextDeltaEvent,
+    ThinkingEvent,
     ToolCallDeltaEvent,
     ToolCallEndEvent,
     ToolCallStartEvent,
@@ -56,6 +60,12 @@ class StreamCollector:
             event: An event yielded by a provider adapter.
         """
         match event:
+            case StreamStartEvent():
+                pass
+
+            case ThinkingEvent():
+                pass
+
             case TextDeltaEvent(delta=delta):
                 self._text_parts.append(delta)
 
@@ -72,15 +82,19 @@ class StreamCollector:
                 self._tool_calls[tcid] = dict(args)
                 self._tool_call_names[tcid] = name
 
-            case StreamDoneEvent(finish_reason=reason, usage=usage):
+            case StreamCitationEvent():
+                pass
+
+            case StreamUsageEvent(prompt_tokens=pt, completion_tokens=ct, total_tokens=tt):
+                self._usage = Usage(
+                    prompt_tokens=pt,
+                    completion_tokens=ct,
+                    total_tokens=tt,
+                )
+
+            case StreamDoneEvent(finish_reason=reason):
                 if reason is not None:
                     self._finish_reason = reason
-                if usage is not None:
-                    self._usage = Usage(
-                        prompt_tokens=usage.get("prompt_tokens", 0),
-                        completion_tokens=usage.get("completion_tokens", 0),
-                        total_tokens=usage.get("total_tokens", 0),
-                    )
 
     def build_message(self) -> Message:
         """Build the assistant message from all accumulated events.

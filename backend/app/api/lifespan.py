@@ -8,9 +8,13 @@ registered with :func:`app.core.lifecycle.register_startup_hook` and
 
 from __future__ import annotations
 
-from app.core.container import Container
+from typing import TYPE_CHECKING
+
 from app.core.lifecycle import register_startup_hook
 from app.core.logging import get_logger
+
+if TYPE_CHECKING:
+    from app.core.container import Container
 
 logger = get_logger(__name__)
 

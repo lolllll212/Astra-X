@@ -72,7 +72,7 @@ class BaseRepository[DomainT, ModelT: Base](ABC):
             return None
         return self._to_domain(model)
 
-    async def list(self, **filters: Any) -> list[DomainT]:
+    async def list_all(self, **filters: Any) -> list[DomainT]:
         """Retrieve all entities matching the given filters.
 
         Keyword arguments are passed as equality filters on the ORM

@@ -43,8 +43,8 @@ class ConversationService:
         *,
         participants: list[ConversationParticipant] | None = None,
         system_prompt: str | None = None,
-        model_id: str | None = None,
-        provider_id: str | None = None,
+        model: str | None = None,
+        provider: str | None = None,
     ) -> Conversation:
         """Create a new conversation.
 
@@ -67,8 +67,8 @@ class ConversationService:
             participants=participants or [],
             metadata=ConversationMetadata(
                 system_prompt=system_prompt,
-                model_id=model_id,
-                provider_id=provider_id,
+                model=model,
+                provider=provider,
             ),
             created_at=now,
             updated_at=now,
@@ -152,7 +152,7 @@ class ConversationService:
         Returns:
             A list of active conversations.
         """
-        return await self._repo.list(status=ConversationStatus.ACTIVE.value)
+        return await self._repo.list_all(status=ConversationStatus.ACTIVE.value)
 
     async def update_metadata(
         self,

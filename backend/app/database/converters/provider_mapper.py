@@ -1,6 +1,6 @@
-"""Provider domain-to-ORM mapper."""
-
 from __future__ import annotations
+
+from pydantic import SecretStr
 
 from app.database.models.provider import ProviderModel
 from app.domain.enums import ModelCapability, ProviderType
@@ -14,11 +14,18 @@ __all__ = [
 
 def provider_to_model(domain: ProviderSpec) -> ProviderModel:
     capabilities: list[str] = sorted(c.value for c in domain.supported_capabilities)
+    api_key_value: str | None = (
+        domain.api_key.get_secret_value() if domain.api_key is not None else None
+    )
     return ProviderModel(
         id=str(domain.id),
         provider_type=domain.provider_type.value,
         display_name=domain.display_name,
+        base_url=domain.base_url,
+        api_key=api_key_value,
         capabilities=capabilities,
+        models=domain.models,
+        is_enabled=domain.is_enabled,
     )
 
 
@@ -26,9 +33,22 @@ def provider_from_model(model: ProviderModel) -> ProviderSpec:
     capabilities: frozenset[ModelCapability] = frozenset(
         ModelCapability(c) for c in (model.capabilities or []) if c in ModelCapability._value2member_map_
     )
+
+    provider_type: ProviderType
+    try:
+        provider_type = ProviderType(model.provider_type)
+    except ValueError:
+        provider_type = ProviderType.OLLAMA
+
     return ProviderSpec(
         id=ProviderID(model.id),
-        provider_type=ProviderType(model.provider_type),
+        provider_type=provider_type,
         display_name=model.display_name,
+        is_enabled=model.is_enabled,
+        base_url=model.base_url,
+        api_key=SecretStr(model.api_key) if model.api_key else None,
         supported_capabilities=capabilities,
+        models=model.models or [],
+        created_at=model.created_at,
+        updated_at=model.updated_at,
     )

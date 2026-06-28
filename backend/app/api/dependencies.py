@@ -107,12 +107,9 @@ async def get_llm_router(request: Request) -> LLMRouter:
     if isinstance(router, LLMRouter):
         return router
 
-    from app.llm.registry import ProviderRegistry
-
-    registry = ProviderRegistry()
     settings: Settings = request.app.state.settings
     new_router = LLMRouter(
-        registry=registry,
+        settings=settings,
         default_provider_id=settings.default_llm_provider,
     )
     request.app.state.llm_router = new_router
@@ -142,9 +139,20 @@ async def get_provider_repository(
 
 async def get_provider_service(
     repository: ProviderRepository = Depends(get_provider_repository),
+    llm_router: LLMRouter = Depends(get_llm_router),
+    settings: Settings = Depends(get_settings),
 ) -> ProviderService:
-    """Provide a provider management service."""
-    return ProviderService(repository)
+    """Provide a provider management service.
+
+    The service is wired with the database repository and the LLM router so
+    that database changes are automatically reflected in the in-memory
+    provider adapter registry.
+    """
+    return ProviderService(
+        repository=repository,
+        llm_router=llm_router,
+        settings=settings,
+    )
 
 
 async def get_usage_service(

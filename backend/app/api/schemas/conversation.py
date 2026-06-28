@@ -21,8 +21,8 @@ class ConversationCreate(BaseModel):
     Attributes:
         title: Optional human-readable title.
         system_prompt: Optional system-level instruction.
-        model_id: Optional default model for this conversation.
-        provider_id: Optional default provider for this conversation.
+        model: Optional default model for this conversation.
+        provider: Optional default provider for this conversation.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -32,8 +32,8 @@ class ConversationCreate(BaseModel):
         default=None,
         description="System-level instruction.",
     )
-    model_id: str | None = Field(default=None, description="Default model.")
-    provider_id: str | None = Field(default=None, description="Default provider.")
+    model: str | None = Field(default=None, description="Default model.")
+    provider: str | None = Field(default=None, description="Default provider.")
 
 
 class ConversationUpdate(BaseModel):
@@ -44,8 +44,8 @@ class ConversationUpdate(BaseModel):
     Attributes:
         title: New conversation title.
         system_prompt: New system-level instruction.
-        model_id: New default model.
-        provider_id: New default provider.
+        model: New default model.
+        provider: New default provider.
         status: New conversation status.
     """
 
@@ -53,8 +53,8 @@ class ConversationUpdate(BaseModel):
 
     title: str | None = Field(default=None, description="Conversation title.")
     system_prompt: str | None = Field(default=None, description="System-level instruction.")
-    model_id: str | None = Field(default=None, description="Default model.")
-    provider_id: str | None = Field(default=None, description="Default provider.")
+    model: str | None = Field(default=None, description="Default model.")
+    provider: str | None = Field(default=None, description="Default provider.")
     status: ConversationStatus | None = Field(default=None, description="Conversation status.")
 
 

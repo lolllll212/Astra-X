@@ -153,8 +153,9 @@ class LMStudioProvider(LLMProvider):
         base_url: str = "http://localhost:1234/v1",
         model: str = "local-model",
         timeout_seconds: float = 60.0,
+        provider_id: str = "lm_studio",
     ) -> None:
-        self.provider_id = "lm_studio"
+        self.provider_id = provider_id
         self.model_id = model
         self._base_url = base_url.rstrip("/")
         self._timeout = timeout_seconds
@@ -239,8 +240,8 @@ class LMStudioProvider(LLMProvider):
         yield StreamMetadataEvent(
             conversation_id=conversation_id,
             message_id=message_id,
-            model_id=request.model or self.model_id,
-            provider_id=self.provider_id,
+            model=request.model or self.model_id,
+            provider=self.provider_id,
         )
 
         try:

@@ -11,7 +11,8 @@ class HealthResponse(BaseModel):
     Attributes:
         status: Overall application health (``"healthy"`` or ``"unhealthy"``).
         database: Whether the database connection is responsive.
-        providers: Whether at least one LLM provider is reachable.
+        providers: Provider availability. ``None`` when no provider is
+            configured (not unhealthy — just absent).
         uptime: Application uptime in seconds.
     """
 
@@ -19,5 +20,8 @@ class HealthResponse(BaseModel):
 
     status: str = Field(description="Overall health status.")
     database: bool = Field(description="Database connectivity.")
-    providers: bool = Field(description="Provider availability.")
+    providers: bool | None = Field(
+        default=None,
+        description="Provider availability. ``None`` if no providers configured.",
+    )
     uptime: float = Field(ge=0, description="Uptime in seconds.")

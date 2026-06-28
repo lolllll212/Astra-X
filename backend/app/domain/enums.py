@@ -83,10 +83,14 @@ class ToolType(StrEnum):
 class StreamEventType(StrEnum):
     """Server-sent event types emitted during streaming responses."""
 
+    START = "start"
+    THINKING = "thinking"
     TEXT_DELTA = "text_delta"
     TOOL_CALL_START = "tool_call_start"
     TOOL_CALL_DELTA = "tool_call_delta"
     TOOL_CALL_END = "tool_call_end"
+    CITATION = "citation"
+    USAGE = "usage"
     ERROR = "error"
     DONE = "done"
     METADATA = "metadata"

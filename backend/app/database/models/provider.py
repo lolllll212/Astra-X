@@ -1,5 +1,3 @@
-"""Provider ORM model."""
-
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -22,6 +20,7 @@ class ProviderModel(Base):
         EncryptedString(512), nullable=True,
     )
     capabilities: Mapped[list[str] | None] = mapped_column(JSON, default=list, nullable=True)
+    models: Mapped[list[str] | None] = mapped_column(JSON, default=list, nullable=True)
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC),

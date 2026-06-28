@@ -82,7 +82,7 @@ class AttachmentService:
         Args:
             conversation_id: The conversation identifier.
         """
-        return await self._repo.list(conversation_id=conversation_id)
+        return await self._repo.list_all(conversation_id=conversation_id)
 
     async def delete(self, attachment_id: str) -> None:
         """Delete an attachment.

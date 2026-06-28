@@ -138,7 +138,7 @@ class TokenCounter:
         """
         resolved_model = model
         if resolved_model is None and conversation is not None:
-            resolved_model = conversation.metadata.model_id
+            resolved_model = conversation.metadata.model
 
         context_limit = _get_context_limit(resolved_model)
         available = context_limit - _MAX_OUTPUT_TOKENS_MARGIN

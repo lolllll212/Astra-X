@@ -250,8 +250,8 @@ class OpenAICompatibleProvider(LLMProvider):
         yield StreamMetadataEvent(
             conversation_id=conversation_id,
             message_id=message_id,
-            model_id=request.model or self.model_id,
-            provider_id=self.provider_id,
+            model=request.model or self.model_id,
+            provider=self.provider_id,
         )
 
         try:

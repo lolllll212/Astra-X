@@ -68,7 +68,7 @@ class ToolService:
         Returns:
             All registered tool specs.
         """
-        return await self._repo.list(is_enabled=True)
+        return await self._repo.list_all(is_enabled=True)
 
     async def remove(self, name: str) -> None:
         """Remove a tool registration.

@@ -132,7 +132,7 @@ class Settings(BaseSettings):
         description="Enables verbose diagnostics. Must be False in production.",
     )
     app_name: str = Field(
-        default="Astra X",
+        default="Astra_X",
         min_length=1,
         description="Human-readable application name, used in logs and API metadata.",
     )

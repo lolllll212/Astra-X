@@ -7,10 +7,9 @@ domain objects; no business logic lives here.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
-from pydantic.functional_discriminators import Discriminator  # type: ignore[import-not-found]
+from pydantic import BaseModel, ConfigDict, Discriminator, Field
 
 from app.api.schemas.conversation import ConversationResponse
 from app.domain.enums import ContentBlockType, MessageRole
@@ -25,7 +24,7 @@ class TextBlockSchema(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    type: ContentBlockType = ContentBlockType.TEXT
+    type: Literal[ContentBlockType.TEXT] = ContentBlockType.TEXT
     text: str = Field(min_length=1, description="The text content.")
 
 
@@ -34,7 +33,7 @@ class ImageBlockSchema(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    type: ContentBlockType = ContentBlockType.IMAGE
+    type: Literal[ContentBlockType.IMAGE] = ContentBlockType.IMAGE
     data_uri: str = Field(min_length=1, description="Base64-encoded data URI.")
     mime_type: str = Field(default="image/png", description="MIME type.")
 
@@ -44,7 +43,7 @@ class ToolCallBlockSchema(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    type: ContentBlockType = ContentBlockType.TOOL_CALL
+    type: Literal[ContentBlockType.TOOL_CALL] = ContentBlockType.TOOL_CALL
     tool_call_id: str = Field(min_length=1, description="Unique tool call identifier.")
     tool_name: str = Field(min_length=1, description="Tool being invoked.")
     arguments: dict[str, Any] = Field(default_factory=dict, description="Tool arguments.")
@@ -55,7 +54,7 @@ class ToolResultBlockSchema(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    type: ContentBlockType = ContentBlockType.TOOL_RESULT
+    type: Literal[ContentBlockType.TOOL_RESULT] = ContentBlockType.TOOL_RESULT
     tool_call_id: str = Field(min_length=1, description="Original tool call identifier.")
     tool_name: str = Field(min_length=1, description="Tool that produced this result.")
     output: str = Field(default="", description="Tool output text.")

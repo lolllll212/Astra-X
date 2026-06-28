@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 from app.domain.enums import ConversationStatus
 
@@ -61,12 +61,14 @@ class ConversationMetadata(BaseModel):
         default=None,
         description="System-level instruction active for this conversation.",
     )
-    model_id: str | None = Field(
+    model: str | None = Field(
         default=None,
+        validation_alias=AliasChoices("model", "model_id"),
         description="Model identifier used for the last (or default) response.",
     )
-    provider_id: str | None = Field(
+    provider: str | None = Field(
         default=None,
+        validation_alias=AliasChoices("provider", "provider_id"),
         description="Provider identifier used for the last (or default) response.",
     )
 

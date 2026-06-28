@@ -40,6 +40,7 @@ from app.domain.message import (
     ToolCallBlock,
     ToolResultBlock,
 )
+from app.domain.stream import StreamErrorEvent
 from app.domain.usage import Usage
 from app.llm.models import GenerationParams
 from app.services.chat_service import ChatResult, ChatService
@@ -230,25 +231,40 @@ async def chat_stream(
 ) -> StreamingResponse:
     """Process a user message and stream the assistant's response via SSE.
 
-    The response is sent as a ``text/event-stream`` with a single
-    ``done`` event containing the complete result once generation
-    finishes.
+    Each :class:`StreamEvent` is serialised as an SSE frame in real-time:
+    the ``event`` field matches ``StreamEvent.type`` and ``data`` contains
+    the full event JSON.
+
+    Clients should listen for:
+    * ``start`` — stream has begun.
+    * ``metadata`` — conversation / message / model info.
+    * ``text_delta`` — incremental text fragments.
+    * ``tool_call_start`` / ``tool_call_delta`` / ``tool_call_end`` — tool calls.
+    * ``thinking`` — internal reasoning fragments.
+    * ``citation`` — source citations.
+    * ``usage`` — token counts after generation completes.
+    * ``done`` — generation finished.
+    * ``error`` — a non-recoverable error occurred.
     """
     content_domain = [_content_schema_to_domain(b) for b in body.content]
     params = _params_schema_to_domain(body.params)
 
-    result = await chat_service.process_message_stream(
-        conversation_id=body.conversation_id,
-        user_content=content_domain,
-        model=body.model,
-        provider=body.provider,
-        params=params,
-    )
-
-    response_schema = _chat_result_to_response(result)
-
     async def event_generator() -> AsyncGenerator[str, None]:
-        yield f"event: done\ndata: {response_schema.model_dump_json()}\n\n"
+        try:
+            async for event in chat_service.stream_message(
+                conversation_id=body.conversation_id,
+                user_content=content_domain,
+                model=body.model,
+                provider=body.provider,
+                params=params,
+            ):
+                yield f"event: {event.type.value}\ndata: {event.model_dump_json()}\n\n"
+        except Exception as exc:
+            error = StreamErrorEvent(
+                error_code="internal_error",
+                message=str(exc),
+            )
+            yield f"event: error\ndata: {error.model_dump_json()}\n\n"
 
     return StreamingResponse(
         content=event_generator(),

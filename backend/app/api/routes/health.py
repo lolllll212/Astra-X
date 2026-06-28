@@ -44,14 +44,17 @@ async def health_check(
     except Exception:
         pass
 
-    providers_healthy = False
+    providers_healthy: bool | None = None
     try:
         provider_status = await llm_router.check_health()
-        providers_healthy = any(provider_status.values())
+        providers_healthy = None if not provider_status else any(provider_status.values())
     except Exception:
-        pass
+        providers_healthy = False
 
-    overall = "healthy" if (database_healthy and providers_healthy) else "unhealthy"
+    # Overall is healthy if DB works and either no providers are
+    # configured or all configured providers are healthy.
+    no_providers = providers_healthy is None
+    overall = "healthy" if database_healthy and (no_providers or providers_healthy) else "unhealthy"
 
     return HealthResponse(
         status=overall,

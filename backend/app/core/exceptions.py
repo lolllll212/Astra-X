@@ -170,7 +170,7 @@ class ValidationError(AstraError):
 
     default_message = "Request validation failed."
     default_error_code = "validation_error"
-    default_http_status = status.HTTP_422_UNPROCESSABLE_ENTITY
+    default_http_status = status.HTTP_422_UNPROCESSABLE_CONTENT
 
 
 class AuthenticationError(AstraError):
@@ -453,7 +453,7 @@ async def http_exception_handler(
             message=str(exc.detail),
             cause=exc,
         )
-    elif exc.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY:
+    elif exc.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT:
         error = ValidationError(
             message=str(exc.detail),
             cause=exc,

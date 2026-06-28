@@ -79,8 +79,8 @@ async def create_conversation(
     conv = await conversation_service.create(
         title=body.title,
         system_prompt=body.system_prompt,
-        model_id=body.model_id,
-        provider_id=body.provider_id,
+        model=body.model,
+        provider=body.provider,
     )
     return _conversation_to_response(conv)
 
@@ -112,7 +112,7 @@ async def update_conversation(
     """Update one or more fields on a conversation.
 
     Accepted fields: ``title``, ``status``, ``system_prompt``,
-    ``model_id``, ``provider_id``.
+    ``model``, ``provider``.
     """
     if body.title is not None:
         await conversation_service.rename(conversation_id, body.title)
@@ -123,10 +123,10 @@ async def update_conversation(
     metadata_fields: dict[str, str | None] = {}
     if body.system_prompt is not None:
         metadata_fields["system_prompt"] = body.system_prompt
-    if body.model_id is not None:
-        metadata_fields["model_id"] = body.model_id
-    if body.provider_id is not None:
-        metadata_fields["provider_id"] = body.provider_id
+    if body.model is not None:
+        metadata_fields["model"] = body.model
+    if body.provider is not None:
+        metadata_fields["provider"] = body.provider
 
     if metadata_fields:
         await conversation_service.update_metadata(conversation_id, **metadata_fields)
