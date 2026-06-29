@@ -44,11 +44,15 @@ class Container:
         config: A dict-like configuration store populated from
             pydantic-settings.
         settings: The validated application settings singleton.
+        embedder: The configured embedding provider.
+        memory_manager: The core semantic memory manager.
     """
 
     def __init__(self) -> None:
         self.config: dict[str, Any] = {}
         self.settings: Settings | None = None
+        self.embedder: Any = None
+        self.memory_manager: Any = None
 
     def from_pydantic(self, settings: Settings) -> None:
         """Populate config from a pydantic-settings instance.

@@ -123,11 +123,24 @@ async def get_conversation_service(
     return ConversationService(repository)
 
 
+async def get_core_memory_manager(request: Request) -> object | None:
+    """Return the core memory manager from app state, if initialised."""
+    return getattr(request.app.state, "memory_manager", None)
+
+
 async def get_memory_service(
     message_repository: MessageRepository = Depends(get_message_repository),
+    core_memory_manager: object | None = Depends(get_core_memory_manager),
 ) -> MemoryService:
-    """Provide a memory service bound to the current session."""
-    return MemoryService(message_repository)
+    """Provide a memory service bound to the current session.
+
+    If the core memory manager has been initialised at startup, it is
+    injected into the service for semantic retrieval and storage.
+    """
+    return MemoryService(
+        message_repository,
+        core_memory_manager=core_memory_manager,  # type: ignore[arg-type]
+    )
 
 
 async def get_provider_repository(

@@ -76,6 +76,9 @@ dev = [
     "pre-commit>=4.0.0",
 ]
 
+[project.scripts]
+eva = "evals.runner:main"
+
 [project.urls]
 Repository = "https://github.com/astra-x/astra-x"
 
@@ -88,7 +91,7 @@ packages = ["app"]
 [tool.ruff]
 target-version = "py312"
 line-length = 100
-src = ["app", "tests"]
+src = ["app", "tests", "evals"]
 
 [tool.ruff.lint]
 select = [
@@ -127,6 +130,14 @@ plugins = ["pydantic.mypy"]
 [[tool.mypy.overrides]]
 module = "dependency_injector.*"
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "evals.*"
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+warn_return_any = false
+warn_unused_ignores = false
+disable_error_code = ["type-arg"]
 
 # ---------------------------------------------------------------------------
 # Pytest: async-first test configuration

@@ -338,6 +338,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("startup.begin", environment=settings.environment.value)
 
     container = await _build_container(settings)
+    assert container is not None
     engine = await _build_database_engine(settings)
 
     import importlib
@@ -382,6 +383,29 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.warning("startup.load_providers_failed", error=str(exc))
 
     app.state.llm_router = llm_router
+
+    # Initialise the memory pipeline.
+    from app.memory import SQLiteVectorStore
+    from app.memory.manager import MemoryManager
+    from app.memory.providers import OllamaEmbedder
+
+    vector_store = SQLiteVectorStore()
+    embedder = OllamaEmbedder(
+        base_url=settings.ollama_base_url,
+        model=settings.embedding_model,
+    )
+    memory_manager = MemoryManager(
+        vector_store=vector_store,
+        embedder=embedder,
+    )
+    container.embedder = embedder
+    container.memory_manager = memory_manager
+    app.state.memory_manager = memory_manager
+    logger.info(
+        "startup.memory_initialised",
+        embedding_provider=settings.embedding_provider,
+        embedding_model=settings.embedding_model,
+    )
 
     elapsed: float = time.monotonic() - start_time
     logger.info("startup.complete", elapsed_ms=round(elapsed * 1000))

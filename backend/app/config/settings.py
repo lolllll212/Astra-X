@@ -260,6 +260,23 @@ class Settings(BaseSettings):
         description="API key for the generic OpenAI-compatible provider, if configured.",
     )
 
+    # --- Embeddings -----------------------------------------------------------
+    embedding_provider: str = Field(
+        default="ollama",
+        min_length=1,
+        description="Provider for generating text embeddings ('ollama', 'openai', 'sentence_transformers').",
+    )
+    embedding_model: str = Field(
+        default="nomic-embed-text",
+        min_length=1,
+        description="Model name used for generating embeddings.",
+    )
+    embedding_dimensions: int = Field(
+        default=768,
+        ge=1,
+        description="Dimensionality of embedding vectors.",
+    )
+
     # --- Field validators -----------------------------------------------------------
 
     @field_validator("allowed_hosts", "cors_origins", mode="before")
