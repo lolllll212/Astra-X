@@ -34,6 +34,12 @@ def build_engine(settings: Settings) -> AsyncEngine:
     Raises:
         Exception: Propagates any SQLAlchemy engine-creation error.
     """
+    is_sqlite = settings.database_url.startswith("sqlite")
+    if is_sqlite:
+        return create_async_engine(
+            url=settings.database_url,
+            echo=settings.database_echo,
+        )
     return create_async_engine(
         url=settings.database_url,
         echo=settings.database_echo,

@@ -200,6 +200,7 @@ class Tracer:
             yield span
         finally:
             span.close()
+            self._pop(span)
 
     # -- programmatic API ---------------------------------------------------
 
@@ -231,6 +232,7 @@ class Tracer:
             span: The span to complete. Must match the top of the stack.
         """
         span.close()
+        self._pop(span)
 
     # -- tree building ------------------------------------------------------
 
