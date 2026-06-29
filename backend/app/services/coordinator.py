@@ -262,13 +262,15 @@ class ChatCoordinator:
     ) -> AsyncIterator[StreamEvent]:
         """Full agent pipeline: plan -> execute (parallel) -> reflect -> answer."""
         goal = _extract_user_goal(user_message)
-        memory_context: str | None = None
+        memory_context: str = ""
 
         if self._memory_manager is not None:
-            memory_context = await self._memory_manager.get_context(
+            ctx = await self._memory_manager.get_context(
                 conversation_id=conversation.id,
                 goal=goal,
             )
+            if ctx is not None:
+                memory_context = ctx
 
         iteration = 0
         all_task_outputs: dict[str, list[str]] = {}
@@ -276,11 +278,11 @@ class ChatCoordinator:
         while iteration < _MAX_AGENT_ITERATIONS:
             iteration += 1
 
-            # Step 1 — Plan
+            # Step 1 — Plan (always uses memory context).
             assert self._planner is not None  # guarded by _has_agent_pipeline
             plan = await self._planner.plan(
                 goal=goal,
-                context=memory_context,
+                memory_context=memory_context,
             )
             yield PlanEvent(
                 goal=plan.goal,

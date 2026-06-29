@@ -68,13 +68,13 @@ class Agent(ABC):
     async def plan(
         self,
         goal: str,
-        context: str | None = None,
+        memory_context: str = "",
     ) -> Plan:
         """Decompose a user goal into a structured plan of tasks.
 
         Args:
             goal: The user's original request.
-            context: Optional additional context (memory, history).
+            memory_context: Relevant memories retrieved for this goal.
 
         Returns:
             A plan containing tasks to achieve the goal.

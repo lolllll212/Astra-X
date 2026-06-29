@@ -50,13 +50,17 @@ class Planner(Agent):
     async def plan(
         self,
         goal: str,
-        context: str | None = None,
+        memory_context: str = "",
     ) -> Plan:
         """Decompose *goal* into a plan using the LLM.
 
+        The planner always receives relevant memories retrieved for this
+        goal and is instructed to reason with them when decomposing the
+        request into tasks.
+
         Args:
             goal: The user's request.
-            context: Optional context from memory or conversation history.
+            memory_context: Relevant memories retrieved for this goal.
 
         Returns:
             A validated plan with tasks in execution order.
@@ -64,7 +68,7 @@ class Planner(Agent):
         Raises:
             GenerationError: If the LLM fails to produce a valid plan.
         """
-        messages = self._build_messages(goal, context)
+        messages = self._build_messages(goal, memory_context)
 
         request = CompletionRequest(
             messages=messages,
@@ -89,19 +93,23 @@ class Planner(Agent):
         )
         return plan
 
-    def _build_messages(self, goal: str, context: str | None) -> list[Message]:
+    def _build_messages(self, goal: str, memory_context: str) -> list[Message]:
         """Build the message list for the planner LLM call.
+
+        Memory context is always prepended so the planner reasons with
+        relevant prior knowledge before decomposing the goal.
 
         Args:
             goal: The user goal.
-            context: Optional context.
+            memory_context: Relevant memories retrieved for this goal.
 
         Returns:
             A list of system and user messages.
         """
-        content = goal
-        if context:
-            content = f"Context: {context}\n\nGoal: {goal}"
+        if memory_context:
+            content = f"Relevant memories:\n{memory_context}\n\nGoal: {goal}"
+        else:
+            content = goal
 
         return [
             Message(

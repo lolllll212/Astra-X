@@ -115,11 +115,11 @@ class Coordinator:
             goal=goal,
         )
 
-        # Load memory context.
+        # Load memory context — planner always reasons with memory.
         state.memory_context = await self._memory_manager.get_context(
             conversation_id=conversation_id,
             goal=goal,
-        )
+        ) or ""
 
         # Main agent loop.
         while not state.is_exhausted:
@@ -130,10 +130,10 @@ class Coordinator:
                 goal=goal,
             )
 
-            # Step 1 — Plan.
+            # Step 1 — Plan (always uses memory context).
             plan = await self._planner.plan(
                 goal=goal,
-                context=state.memory_context,
+                memory_context=state.memory_context,
             )
             state.plan = plan
             graph = self._build_graph(plan)
@@ -158,14 +158,16 @@ class Coordinator:
                     )
                     graph.update_status(task.id, new_status)
 
-                    # Store in memory.
+                    # Step 3 — Reflect (before storing so assessment is available).
+                    assessment = await self._reflection.reflect(result)
+
+                    # Store in memory with feedback loop + assessment.
                     await self._memory_manager.store_result(
                         conversation_id=conversation_id,
                         result=result,
+                        assessment=assessment,
                     )
 
-                    # Step 3 — Reflect.
-                    assessment = await self._reflection.reflect(result)
                     handled = self._handle_reflection_decision(
                         decision=assessment.decision,
                         assessment=assessment,

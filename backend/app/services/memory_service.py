@@ -45,6 +45,11 @@ class MemoryService:
         self._message_repo = message_repository
         self._core_memory_manager = core_memory_manager
 
+    @property
+    def core_memory_manager(self) -> CoreMemoryManager | None:
+        """Expose the core semantic memory manager, if available."""
+        return self._core_memory_manager
+
     async def get_relevant_context(
         self,
         conversation_id: str,
