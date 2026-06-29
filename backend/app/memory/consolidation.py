@@ -9,9 +9,8 @@ from __future__ import annotations
 import difflib
 from collections.abc import Sequence
 from datetime import UTC, datetime
-from uuid import uuid4
-
 from typing import Any
+from uuid import uuid4
 
 from app.core.logging import get_logger
 from app.memory.models.memory import Memory

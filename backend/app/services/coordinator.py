@@ -55,6 +55,7 @@ from app.domain.stream import (
     StreamStartEvent,
     StreamUsageEvent,
     TaskProgressEvent,
+    TextDeltaEvent,
     ToolProgressEvent,
     ToolResultStreamEvent,
 )
@@ -220,14 +221,14 @@ class ChatCoordinator:
         provider: str | None = None,
         params: GenerationParams | None = None,
         assistant_message_id: str | None = None,
-    ) -> str:
+    ) -> Message:
         """Run the pipeline in non-streaming mode.
 
         Args:
             Same as :meth:`run`.
 
         Returns:
-            The assistant's response text.
+            The assistant message built from the collected stream.
         """
         from app.llm.streaming import collect_stream
 
@@ -276,6 +277,7 @@ class ChatCoordinator:
             iteration += 1
 
             # Step 1 — Plan
+            assert self._planner is not None  # guarded by _has_agent_pipeline
             plan = await self._planner.plan(
                 goal=goal,
                 context=memory_context,
@@ -323,7 +325,7 @@ class ChatCoordinator:
 
                 # Execute ready tasks concurrently.
                 async def run_task(task: Task) -> ExecutionResult:
-                    result = await self._agent_executor.execute(task)
+                    result = await self._agent_executor.execute(task)  # type: ignore[union-attr]
                     return result
 
                 tasks_with_ids = [(t, run_task(t)) for t in ready_tasks]
@@ -332,8 +334,8 @@ class ChatCoordinator:
                     return_exceptions=True,
                 )
 
-                for task, result_or_exc in zip(ready_tasks, results):
-                    if isinstance(result_or_exc, Exception):
+                for task, result_or_exc in zip(ready_tasks, results, strict=False):
+                    if isinstance(result_or_exc, BaseException):
                         graph.update_status(task.id, TaskStatus.FAILED)
                         yield TaskProgressEvent(
                             task_id=task.id,
@@ -343,15 +345,14 @@ class ChatCoordinator:
                         )
                         continue
 
-                    result: ExecutionResult = result_or_exc
-                    completed_results[result.task_id] = result
+                    completed_results[result_or_exc.task_id] = result_or_exc
                     task_outputs = all_task_outputs.setdefault(task.id, [])
-                    if result.output:
-                        task_outputs.append(result.output)
+                    if result_or_exc.output:
+                        task_outputs.append(result_or_exc.output)
 
                     new_status = (
                         TaskStatus.COMPLETED
-                        if result.status is TaskStatus.COMPLETED
+                        if result_or_exc.status is TaskStatus.COMPLETED
                         else TaskStatus.FAILED
                     )
                     graph.update_status(task.id, new_status)
@@ -360,12 +361,12 @@ class ChatCoordinator:
                         task_id=task.id,
                         description=task.description,
                         status=new_status.value,
-                        result=result.output,
-                        error=result.error,
+                        result=result_or_exc.output,
+                        error=result_or_exc.error,
                     )
 
                     # Yield any artifacts from the execution metadata.
-                    task_artifacts = result.metadata.get("artifacts", [])
+                    task_artifacts = result_or_exc.metadata.get("artifacts", [])
                     if isinstance(task_artifacts, list):
                         for artifact in task_artifacts:
                             if isinstance(artifact, dict):
@@ -381,13 +382,13 @@ class ChatCoordinator:
                     if self._memory_manager is not None:
                         await self._memory_manager.store_result(
                             conversation_id=conversation.id,
-                            result=result,
+                            result=result_or_exc,
                         )
 
                 # Step 3 — Reflect on this batch.
                 for task in ready_tasks:
                     if task.id in completed_results:
-                        assessment = await self._reflection.reflect(
+                        assessment = await self._reflection.reflect(  # type: ignore[union-attr]
                             completed_results[task.id],
                         )
                         reflection = assessment
@@ -504,7 +505,7 @@ class ChatCoordinator:
 
                 tool_context = ToolExecContext(
                     conversation_id=conversation.id,
-                    logger=logger,
+                    logger=logger,  # type: ignore[arg-type]
                 )
 
                 from app.tools.models import ToolCall as ToolCallModel
@@ -514,7 +515,7 @@ class ChatCoordinator:
                     arguments=tc_block.arguments,
                 )
 
-                result = await self._tool_executor.execute(tool_call_model, tool_context)
+                result = await self._tool_executor.execute(tool_call_model, tool_context)  # type: ignore[union-attr]
 
                 yield ToolResultStreamEvent(
                     tool_name=tc_block.tool_name,
@@ -567,8 +568,8 @@ class ChatCoordinator:
                 parts.append(result.output)
 
         if not parts:
-            yield TextBlock(
-                text="I was unable to produce a result. Please try rephrasing your request.",
+            yield TextDeltaEvent(
+                delta="I was unable to produce a result. Please try rephrasing your request.",
             )
             return
 

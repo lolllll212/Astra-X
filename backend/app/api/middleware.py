@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import time
 import uuid
+from collections import defaultdict
 from collections.abc import Awaitable, Callable
 from typing import ClassVar
 
@@ -112,3 +113,106 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         for header, value in self._SECURITY_HEADERS.items():
             response.headers[header] = value
         return response
+
+
+_EXEMPT_PATHS = {"/health", "/metrics", "/api/v1/health", "/api/v1/metrics", "/docs", "/openapi.json", "/redoc"}
+
+
+class RateLimitMiddleware(BaseHTTPMiddleware):
+    """In-memory sliding-window rate limiter.
+
+    Uses client IP (or API key if provided) as the bucket key.  The
+    budget resets every 60 seconds.  In development the limit is
+    raised to 1000/min so local tooling is not disrupted.
+    """
+
+    _buckets: ClassVar[dict[str, list[float]]] = defaultdict(list)
+
+    async def dispatch(
+        self,
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        path = request.url.path.rstrip("/")
+        if any(path == exempt or path.startswith(exempt + "/") for exempt in _EXEMPT_PATHS):
+            return await call_next(request)
+
+        settings = getattr(request.app.state, "settings", None)
+        env = getattr(settings, "environment", None)
+        limit = 1000 if env == "development" else getattr(settings, "rate_limit_requests_per_minute", 60)
+
+        client_ip = request.client.host if request.client else "unknown"
+        auth: str | None = request.headers.get("Authorization", "")
+        key = auth if auth else client_ip
+
+        now = time.monotonic()
+        window = 60.0
+        bucket = self._buckets[key]
+        cutoff = now - window
+
+        # Prune expired timestamps and check budget.
+        bucket[:] = [ts for ts in bucket if ts > cutoff]
+
+        if len(bucket) >= limit:
+            return Response(
+                status_code=429,
+                content='{"error":{"code":"rate_limit_error","message":"Rate limit exceeded. Try again shortly."}}',
+                media_type="application/json",
+            )
+
+        bucket.append(now)
+        return await call_next(request)
+"""Path prefixes that do not require authentication."""
+
+
+class AuthenticationMiddleware(BaseHTTPMiddleware):
+    """Validate a bearer token on every non-exempt request.
+
+    Reads the expected API key from ``app.state.settings.secret_key``
+    (the ASTRA_SECRET_KEY value).  In development the check is skipped
+    so local tooling is not disrupted.
+
+    The caller must provide an ``Authorization: Bearer <key>`` header.
+    """
+
+    async def dispatch(
+        self,
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        path = request.url.path.rstrip("/")
+
+        if any(path == exempt or path.startswith(exempt + "/") for exempt in _EXEMPT_PATHS):
+            return await call_next(request)
+
+        settings = getattr(request.app.state, "settings", None)
+        env = getattr(settings, "environment", None)
+
+        # Skip auth in development for local tooling convenience.
+        if env == "development":
+            return await call_next(request)
+
+        auth: str | None = request.headers.get("Authorization")
+        if auth is None or not auth.startswith("Bearer "):
+            return Response(
+                status_code=401,
+                content='{"error":{"code":"authentication_error","message":"Missing or invalid Authorization header."}}',
+                media_type="application/json",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        token = auth.removeprefix("Bearer ").strip()
+        expected = getattr(settings, "secret_key", None)
+        if expected is not None:
+            from pydantic import SecretStr
+
+            expected_value = expected.get_secret_value() if isinstance(expected, SecretStr) else str(expected)
+            if token != expected_value:
+                return Response(
+                    status_code=401,
+                    content='{"error":{"code":"authentication_error","message":"Invalid API key."}}',
+                    media_type="application/json",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+
+        return await call_next(request)

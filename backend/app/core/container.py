@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.config.settings import Settings, get_settings
+from app.config.settings import Settings
 
 __all__ = [
     "Container",

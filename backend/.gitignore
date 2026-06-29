@@ -1,0 +1,46 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+.pip/
+
+# --- Virtual environment ---
+.venv/
+.venv_*/
+venv/
+venv_*/
+
+# --- Testing / coverage ---
+.coverage
+.coverage.*
+.pytest_cache/
+htmlcov/
+
+# --- Linting / typing ---
+.mypy_cache/
+.ruff_cache/
+
+# --- IDE ---
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# --- Database ---
+*.db
+*.sqlite3
+
+# --- Environment ---
+.env
+.env.local
+.env.production
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+
+# --- Project-specific ---
+astra_x.db

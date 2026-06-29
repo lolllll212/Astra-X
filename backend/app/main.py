@@ -26,6 +26,8 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.errors import llm_error_handler, unhandled_error_handler
 from app.api.middleware import (
+    AuthenticationMiddleware,
+    RateLimitMiddleware,
     RequestIDMiddleware,
     RequestLoggingMiddleware,
     SecurityHeadersMiddleware,
@@ -95,6 +97,12 @@ __import__("app.api.lifespan")
 
 app.add_middleware(
     RequestLoggingMiddleware,
+)
+app.add_middleware(
+    RateLimitMiddleware,
+)
+app.add_middleware(
+    AuthenticationMiddleware,
 )
 app.add_middleware(
     SecurityHeadersMiddleware,

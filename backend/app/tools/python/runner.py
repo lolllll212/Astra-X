@@ -11,9 +11,11 @@ import json
 import sys
 from typing import Any
 
+from app.config.settings import Environment
 from app.tools.base import Tool
 from app.tools.context import ToolContext
 from app.tools.models import ToolParameter, ToolSchema
+from app.tools.python.sandbox import SandboxConfig
 from app.tools.result import ToolResult
 
 
@@ -48,6 +50,18 @@ class PythonRunnerTool(Tool):
         if timeout < 1 or timeout > 120:
             return ToolResult(success=False, error="timeout must be between 1 and 120")
 
+        # Sandbox gate: refuse unsandboxed execution outside development.
+        env = getattr(context.settings, "environment", None)
+        sandbox = SandboxConfig()
+        if env is not Environment.DEVELOPMENT and not sandbox.enabled:
+            return ToolResult(
+                success=False,
+                error=(
+                    "Python execution is disabled outside development without a "
+                    "sandbox. Set environment=development or configure a sandbox."
+                ),
+            )
+
         import_vars: dict[str, Any] = {}
         if vars_json:
             try:
@@ -57,6 +71,7 @@ class PythonRunnerTool(Tool):
 
         runner_code = "\n".join([
             "import json, sys, traceback",
+            "_code_ = sys.stdin.read()",
             "_result = {'stdout': '', 'stderr': '', 'return': None, 'error': None}",
             "try:",
             "    import io",
@@ -83,7 +98,7 @@ class PythonRunnerTool(Tool):
                 sys.executable,
                 "-c",
                 runner_code,
-                stdin=asyncio.subprocess.DEVNULL,
+                stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
