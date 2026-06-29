@@ -176,7 +176,7 @@ class Planner(Agent):
             task = Task(
                 id=item.get("id", str(uuid4())),
                 description=item.get("description", goal),
-                tool_name=item.get("tool_name"),
+                capability=item.get("capability"),
                 dependencies=item.get("dependencies", []),
             )
             tasks.append(task)

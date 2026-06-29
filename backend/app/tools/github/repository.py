@@ -21,6 +21,10 @@ class GitHubRepositoryTool(Tool):
         return "Get information about a GitHub repository: description, stars, forks, language, topics, license."
 
     @property
+    def capabilities(self) -> list[str]:
+        return ["get_repository_info", "search_repository"]
+
+    @property
     def schema(self) -> ToolSchema:
         return ToolSchema(
             name=self.name,

@@ -22,6 +22,10 @@ class ScrapeTool(Tool):
         return "Scrape and extract structured data from a web page: title, meta tags, headings, links, and text content."
 
     @property
+    def capabilities(self) -> list[str]:
+        return ["scrape_web"]
+
+    @property
     def schema(self) -> ToolSchema:
         return ToolSchema(
             name=self.name,
@@ -32,6 +36,7 @@ class ScrapeTool(Tool):
                              enum=["all", "text", "links", "images", "headings"]),
                 ToolParameter(name="timeout", type_="integer", description="Request timeout in seconds", required=False, default=15),
             ],
+            capabilities=self.capabilities,
         )
 
     async def _execute(self, context: ToolContext, **kwargs: Any) -> ToolResult:

@@ -21,6 +21,10 @@ class TextTool(Tool):
         return "Manipulate text. Supports operations: count (words/chars), split, join, upper, lower, trim, reverse, contains, replace, substring."
 
     @property
+    def capabilities(self) -> list[str]:
+        return ["manipulate_text"]
+
+    @property
     def schema(self) -> ToolSchema:
         return ToolSchema(
             name=self.name,
@@ -36,6 +40,7 @@ class TextTool(Tool):
                 ToolParameter(name="end", type_="integer", description="End index (for substring operation)", required=False),
                 ToolParameter(name="substring", type_="string", description="Substring to search for (for contains operation)", required=False),
             ],
+            capabilities=self.capabilities,
         )
 
     async def _execute(self, context: ToolContext, **kwargs: Any) -> ToolResult:

@@ -21,6 +21,10 @@ class DownloadTool(Tool):
         return "Download a file from a URL and save it to the workspace."
 
     @property
+    def capabilities(self) -> list[str]:
+        return ["download_file"]
+
+    @property
     def schema(self) -> ToolSchema:
         return ToolSchema(
             name=self.name,

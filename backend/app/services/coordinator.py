@@ -25,6 +25,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from app.agents.base import AgentConfig
@@ -36,6 +37,7 @@ from app.agents.planner import Planner
 from app.agents.reflection import Reflection
 from app.agents.task_graph import TaskGraph
 from app.core.logging import get_logger
+from app.core.tracing import get_tracer
 from app.domain.conversation import Conversation
 from app.domain.enums import MessageRole
 from app.domain.message import (
@@ -64,6 +66,9 @@ from app.llm.router import LLMRouter
 from app.tools.context import ToolContext as ToolExecContext
 from app.tools.executor import ToolExecutor
 from app.tools.registry import ToolRegistry
+
+if TYPE_CHECKING:
+    from app.tools.capabilities import CapabilityRegistry
 
 logger = get_logger(__name__)
 
@@ -111,6 +116,7 @@ class ChatCoordinator:
         agent_executor: AgentExecutor | None = None,
         reflection: Reflection | None = None,
         memory_manager: MemoryManager | None = None,
+        capability_registry: CapabilityRegistry | None = None,
         agent_config: AgentConfig | None = None,
     ) -> None:
         self._llm_router = llm_router
@@ -120,6 +126,7 @@ class ChatCoordinator:
         self._agent_executor = agent_executor
         self._reflection = reflection
         self._memory_manager = memory_manager
+        self._capability_registry = capability_registry
         self._agent_config = agent_config or AgentConfig()
 
     @property
@@ -262,156 +269,166 @@ class ChatCoordinator:
     ) -> AsyncIterator[StreamEvent]:
         """Full agent pipeline: plan -> execute (parallel) -> reflect -> answer."""
         goal = _extract_user_goal(user_message)
+        tracer = get_tracer()
         memory_context: str = ""
 
-        if self._memory_manager is not None:
-            ctx = await self._memory_manager.get_context(
-                conversation_id=conversation.id,
-                goal=goal,
-            )
-            if ctx is not None:
-                memory_context = ctx
-
-        iteration = 0
-        all_task_outputs: dict[str, list[str]] = {}
-
-        while iteration < _MAX_AGENT_ITERATIONS:
-            iteration += 1
-
-            # Step 1 — Plan (always uses memory context).
-            assert self._planner is not None  # guarded by _has_agent_pipeline
-            plan = await self._planner.plan(
-                goal=goal,
-                memory_context=memory_context,
-            )
-            yield PlanEvent(
-                goal=plan.goal,
-                tasks=[
-                    PlannedTaskSchema(
-                        id=t.id,
-                        description=t.description,
-                        status=t.status.value,
-                        dependencies=list(t.dependencies),
-                        tool_name=t.tool_name,
+        with tracer.span("Request", category="chat", conversation_id=conversation.id):
+            if self._memory_manager is not None:
+                with tracer.span("Memory Retrieval", category="memory"):
+                    ctx = await self._memory_manager.get_context(
+                        conversation_id=conversation.id,
+                        goal=goal,
                     )
-                    for t in plan.tasks
-                ],
-                iteration=iteration - 1,
-            )
+                    if ctx is not None:
+                        memory_context = ctx
 
-            # Step 2 — Execute tasks (parallel via TaskGraph)
-            graph = TaskGraph()
-            for task in plan.tasks:
-                graph.add_task(task, depends_on=task.dependencies)
+            iteration = 0
+            all_task_outputs: dict[str, list[str]] = {}
 
-            completed_results: dict[str, ExecutionResult] = {}
-            reflection = ReflectionResult(
-                decision=ReflectionDecision.ACCEPT,
-                reason="Initial execution.",
-                confidence=0.0,
-            )
+            while iteration < _MAX_AGENT_ITERATIONS:
+                iteration += 1
 
-            while not graph.is_complete():
-                ready_tasks = graph.get_ready()
-                if not ready_tasks:
-                    logger.warning("coordinator.no_ready_tasks")
-                    break
-
-                for task in ready_tasks:
-                    graph.update_status(task.id, TaskStatus.RUNNING)
-                    yield TaskProgressEvent(
-                        task_id=task.id,
-                        description=task.description,
-                        status="running",
+                # Step 1 — Plan (always uses memory context).
+                assert self._planner is not None  # guarded by _has_agent_pipeline
+                with tracer.span("Planner", category="agent"):
+                    plan = await self._planner.plan(
+                        goal=goal,
+                        memory_context=memory_context,
                     )
 
-                # Execute ready tasks concurrently.
-                async def run_task(task: Task) -> ExecutionResult:
-                    result = await self._agent_executor.execute(task)  # type: ignore[union-attr]
-                    return result
-
-                tasks_with_ids = [(t, run_task(t)) for t in ready_tasks]
-                results = await asyncio.gather(
-                    *(coro for _, coro in tasks_with_ids),
-                    return_exceptions=True,
+                yield PlanEvent(
+                    goal=plan.goal,
+                    tasks=[
+                        PlannedTaskSchema(
+                            id=t.id,
+                            description=t.description,
+                            status=t.status.value,
+                            dependencies=list(t.dependencies),
+                            tool_name=t.tool_name,
+                            capability=t.capability,
+                        )
+                        for t in plan.tasks
+                    ],
+                    iteration=iteration - 1,
                 )
 
-                for task, result_or_exc in zip(ready_tasks, results, strict=False):
-                    if isinstance(result_or_exc, BaseException):
-                        graph.update_status(task.id, TaskStatus.FAILED)
+                # Step 2 — Execute tasks (parallel via TaskGraph)
+                graph = TaskGraph()
+                for task in plan.tasks:
+                    graph.add_task(task, depends_on=task.dependencies)
+
+                completed_results: dict[str, ExecutionResult] = {}
+                reflection = ReflectionResult(
+                    decision=ReflectionDecision.ACCEPT,
+                    reason="Initial execution.",
+                    confidence=0.0,
+                )
+
+                while not graph.is_complete():
+                    ready_tasks = graph.get_ready()
+                    if not ready_tasks:
+                        logger.warning("coordinator.no_ready_tasks")
+                        break
+
+                    for task in ready_tasks:
+                        graph.update_status(task.id, TaskStatus.RUNNING)
                         yield TaskProgressEvent(
                             task_id=task.id,
                             description=task.description,
-                            status="failed",
-                            error=str(result_or_exc),
+                            status="running",
                         )
-                        continue
 
-                    completed_results[result_or_exc.task_id] = result_or_exc
-                    task_outputs = all_task_outputs.setdefault(task.id, [])
-                    if result_or_exc.output:
-                        task_outputs.append(result_or_exc.output)
+                    # Execute ready tasks concurrently.
+                    async def run_task(task: Task) -> ExecutionResult:
+                        with tracer.span(f"Execute {task.id}", category="execution", task_id=task.id):
+                            result = await self._agent_executor.execute(task)  # type: ignore[union-attr]
+                            return result
 
-                    new_status = (
-                        TaskStatus.COMPLETED
-                        if result_or_exc.status is TaskStatus.COMPLETED
-                        else TaskStatus.FAILED
-                    )
-                    graph.update_status(task.id, new_status)
-
-                    yield TaskProgressEvent(
-                        task_id=task.id,
-                        description=task.description,
-                        status=new_status.value,
-                        result=result_or_exc.output,
-                        error=result_or_exc.error,
+                    tasks_with_ids = [(t, run_task(t)) for t in ready_tasks]
+                    results = await asyncio.gather(
+                        *(coro for _, coro in tasks_with_ids),
+                        return_exceptions=True,
                     )
 
-                    # Yield any artifacts from the execution metadata.
-                    task_artifacts = result_or_exc.metadata.get("artifacts", [])
-                    if isinstance(task_artifacts, list):
-                        for artifact in task_artifacts:
-                            if isinstance(artifact, dict):
-                                yield ArtifactEvent(
-                                    task_id=task.id,
-                                    label=artifact.get("label", ""),
-                                    artifact_type=artifact.get("type", "json"),
-                                    data=artifact.get("data", artifact),
-                                    metadata=artifact.get("metadata", {}),
+                    for task, result_or_exc in zip(ready_tasks, results, strict=False):
+                        if isinstance(result_or_exc, BaseException):
+                            graph.update_status(task.id, TaskStatus.FAILED)
+                            yield TaskProgressEvent(
+                                task_id=task.id,
+                                description=task.description,
+                                status="failed",
+                                error=str(result_or_exc),
+                            )
+                            continue
+
+                        completed_results[result_or_exc.task_id] = result_or_exc
+                        task_outputs = all_task_outputs.setdefault(task.id, [])
+                        if result_or_exc.output:
+                            task_outputs.append(result_or_exc.output)
+
+                        new_status = (
+                            TaskStatus.COMPLETED
+                            if result_or_exc.status is TaskStatus.COMPLETED
+                            else TaskStatus.FAILED
+                        )
+                        graph.update_status(task.id, new_status)
+
+                        yield TaskProgressEvent(
+                            task_id=task.id,
+                            description=task.description,
+                            status=new_status.value,
+                            result=result_or_exc.output,
+                            error=result_or_exc.error,
+                        )
+
+                        # Yield any artifacts from the execution metadata.
+                        task_artifacts = result_or_exc.metadata.get("artifacts", [])
+                        if isinstance(task_artifacts, list):
+                            for artifact in task_artifacts:
+                                if isinstance(artifact, dict):
+                                    yield ArtifactEvent(
+                                        task_id=task.id,
+                                        label=artifact.get("label", ""),
+                                        artifact_type=artifact.get("type", "json"),
+                                        data=artifact.get("data", artifact),
+                                        metadata=artifact.get("metadata", {}),
+                                    )
+
+                        # Store result in memory if manager is available.
+                        if self._memory_manager is not None:
+                            with tracer.span("Memory Store", category="memory"):
+                                await self._memory_manager.store_result(
+                                    conversation_id=conversation.id,
+                                    result=result_or_exc,
                                 )
 
-                    # Store result in memory if manager is available.
-                    if self._memory_manager is not None:
-                        await self._memory_manager.store_result(
-                            conversation_id=conversation.id,
-                            result=result_or_exc,
-                        )
+                    # Step 3 — Reflect on this batch.
+                    for task in ready_tasks:
+                        if task.id in completed_results:
+                            with tracer.span("Reflection", category="agent"):
+                                assessment = await self._reflection.reflect(  # type: ignore[union-attr]
+                                    completed_results[task.id],
+                                )
+                            reflection = assessment
+                            yield ReflectionEvent(
+                                decision=assessment.decision.value,
+                                feedback=assessment.feedback,
+                                reason=assessment.reason,
+                                confidence=assessment.confidence,
+                                iteration=iteration - 1,
+                            )
 
-                # Step 3 — Reflect on this batch.
-                for task in ready_tasks:
-                    if task.id in completed_results:
-                        assessment = await self._reflection.reflect(  # type: ignore[union-attr]
-                            completed_results[task.id],
-                        )
-                        reflection = assessment
-                        yield ReflectionEvent(
-                            decision=assessment.decision.value,
-                            feedback=assessment.feedback,
-                            reason=assessment.reason,
-                            confidence=assessment.confidence,
-                            iteration=iteration - 1,
-                        )
+                            self._handle_reflection_decision(
+                                decision=assessment.decision,
+                                assessment=assessment,
+                                graph=graph,
+                                task=task,
+                            )
 
-                        self._handle_reflection_decision(
-                            decision=assessment.decision,
-                            assessment=assessment,
-                            graph=graph,
-                            task=task,
-                        )
-
-            # Check overall plan completeness.
-            if reflection.decision is ReflectionDecision.ACCEPT:
-                break
+                # Check overall plan completeness.
+                with tracer.span("Plan-level Reflection", category="agent"):
+                    if reflection.decision is ReflectionDecision.ACCEPT:
+                        break
 
         # Step 4 — Stream the final answer.
         async for event in self._stream_final_answer(
@@ -438,6 +455,7 @@ class ChatCoordinator:
                     id=str(uuid4()),
                     description=task.description,
                     dependencies=[task.id],
+                    capability=task.capability,
                     tool_name=task.tool_name,
                 )
                 graph.add_task(follow_up, depends_on=[task.id])

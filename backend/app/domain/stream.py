@@ -274,7 +274,8 @@ class PlannedTaskSchema(BaseModel):
     description: str = Field(min_length=1, description="What the task does.")
     status: str = Field(default="pending", description="Task status for display.")
     dependencies: list[str] = Field(default_factory=list, description="Dependency task IDs.")
-    tool_name: str | None = Field(default=None, description="Tool to invoke.")
+    tool_name: str | None = Field(default=None, description="Resolved tool name.")
+    capability: str | None = Field(default=None, description="Capability needed.")
 
 
 class PlanEvent(BaseModel):

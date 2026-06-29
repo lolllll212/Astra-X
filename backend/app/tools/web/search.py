@@ -21,6 +21,10 @@ class SearchTool(Tool):
         return "Search the web for a given query. Returns a list of results with titles, URLs, and snippets."
 
     @property
+    def capabilities(self) -> list[str]:
+        return ["search_web"]
+
+    @property
     def schema(self) -> ToolSchema:
         return ToolSchema(
             name=self.name,
@@ -29,6 +33,7 @@ class SearchTool(Tool):
                 ToolParameter(name="query", type_="string", description="Search query", required=True),
                 ToolParameter(name="count", type_="integer", description="Number of results to return (max 20)", required=False, default=8),
             ],
+            capabilities=self.capabilities,
         )
 
     async def _execute(self, context: ToolContext, **kwargs: Any) -> ToolResult:

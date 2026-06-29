@@ -22,6 +22,10 @@ class DateTimeTool(Tool):
         return "Get the current date, time, and timezone information."
 
     @property
+    def capabilities(self) -> list[str]:
+        return ["get_datetime"]
+
+    @property
     def schema(self) -> ToolSchema:
         return ToolSchema(
             name=self.name,
@@ -30,6 +34,7 @@ class DateTimeTool(Tool):
                 ToolParameter(name="format", type_="string", description="Output format: 'iso' (default), 'unix', 'human'", required=False, default="iso"),
                 ToolParameter(name="timezone", type_="string", description="Timezone name e.g. 'UTC', 'America/New_York'", required=False, default="UTC"),
             ],
+            capabilities=self.capabilities,
         )
 
     async def _execute(self, context: ToolContext, **kwargs: Any) -> ToolResult:

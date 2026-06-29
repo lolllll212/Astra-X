@@ -21,6 +21,10 @@ class GitHubCommitsTool(Tool):
         return "List recent commits from a GitHub repository."
 
     @property
+    def capabilities(self) -> list[str]:
+        return ["get_commits"]
+
+    @property
     def schema(self) -> ToolSchema:
         return ToolSchema(
             name=self.name,

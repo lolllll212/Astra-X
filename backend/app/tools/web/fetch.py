@@ -20,6 +20,10 @@ class FetchTool(Tool):
         return "Fetch the content of a URL and return it as text (HTML stripped to markdown-like plain text)."
 
     @property
+    def capabilities(self) -> list[str]:
+        return ["fetch_url"]
+
+    @property
     def schema(self) -> ToolSchema:
         return ToolSchema(
             name=self.name,
@@ -29,6 +33,7 @@ class FetchTool(Tool):
                 ToolParameter(name="format", type_="string", description="Output format: 'text' or 'html'", required=False, default="text"),
                 ToolParameter(name="timeout", type_="integer", description="Request timeout in seconds", required=False, default=15),
             ],
+            capabilities=self.capabilities,
         )
 
     async def _execute(self, context: ToolContext, **kwargs: Any) -> ToolResult:

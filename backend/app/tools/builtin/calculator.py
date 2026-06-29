@@ -64,6 +64,10 @@ class CalculatorTool(Tool):
         return "Evaluate a mathematical expression safely. Supports +, -, *, /, //, %, **, and functions like sqrt, sin, cos, log, pi, e."
 
     @property
+    def capabilities(self) -> list[str]:
+        return ["calculate"]
+
+    @property
     def schema(self) -> ToolSchema:
         return ToolSchema(
             name=self.name,
@@ -71,6 +75,7 @@ class CalculatorTool(Tool):
             parameters=[
                 ToolParameter(name="expression", type_="string", description="Mathematical expression to evaluate", required=True),
             ],
+            capabilities=self.capabilities,
         )
 
     async def _execute(self, context: ToolContext, **kwargs: Any) -> ToolResult:

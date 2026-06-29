@@ -21,6 +21,10 @@ class WriteFileTool(Tool):
         return "Write content to a file. Creates parent directories if they do not exist."
 
     @property
+    def capabilities(self) -> list[str]:
+        return ["write_file", "modify_file_content"]
+
+    @property
     def schema(self) -> ToolSchema:
         return ToolSchema(
             name=self.name,

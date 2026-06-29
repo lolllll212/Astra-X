@@ -20,6 +20,7 @@ The coordinator:
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from app.agents.base import AgentConfig
@@ -33,10 +34,14 @@ from app.agents.reflection import Reflection
 from app.agents.state import AgentState
 from app.agents.task_graph import TaskGraph
 from app.core.logging import get_logger
+from app.core.tracing import get_tracer
 from app.domain.enums import MessageRole
 from app.domain.message import Message, TextBlock
 from app.llm.models import CompletionRequest, CompletionResponse, GenerationParams
 from app.llm.router import LLMRouter
+
+if TYPE_CHECKING:
+    from app.tools.capabilities import CapabilityRegistry
 
 logger = get_logger(__name__)
 
@@ -51,6 +56,7 @@ class CoordinatorResult:
         state: The final agent state.
         iterations: Number of plan→execute→reflect cycles.
         final_decision: The last reflection decision before stopping.
+        timeline: Human-readable trace tree, if tracing was active.
     """
 
     final_answer: str
@@ -58,6 +64,7 @@ class CoordinatorResult:
     state: AgentState
     iterations: int
     final_decision: ReflectionDecision = ReflectionDecision.ACCEPT
+    timeline: str = ""
 
 
 class Coordinator:
@@ -87,6 +94,7 @@ class Coordinator:
         reflection: Reflection,
         memory_manager: MemoryManager,
         llm_router: LLMRouter,
+        capability_registry: CapabilityRegistry | None = None,
         config: AgentConfig | None = None,
     ) -> None:
         self._planner = planner
@@ -94,6 +102,7 @@ class Coordinator:
         self._reflection = reflection
         self._memory_manager = memory_manager
         self._llm_router = llm_router
+        self._capability_registry = capability_registry
         self._config = config or AgentConfig()
 
     async def run(
@@ -115,75 +124,83 @@ class Coordinator:
             goal=goal,
         )
 
-        # Load memory context — planner always reasons with memory.
-        state.memory_context = await self._memory_manager.get_context(
-            conversation_id=conversation_id,
-            goal=goal,
-        ) or ""
+        tracer = get_tracer()
+        with tracer.span("Request", category="agent", conversation_id=conversation_id):
+            # Load memory context — planner always reasons with memory.
+            with tracer.span("Memory Retrieval", category="memory"):
+                state.memory_context = await self._memory_manager.get_context(
+                    conversation_id=conversation_id,
+                    goal=goal,
+                ) or ""
 
-        # Main agent loop.
-        while not state.is_exhausted:
-            logger.info(
-                "coordinator.iteration_start",
-                iteration=state.iteration + 1,
-                max_iterations=state.max_iterations,
-                goal=goal,
-            )
+            # Main agent loop.
+            while not state.is_exhausted:
+                logger.info(
+                    "coordinator.iteration_start",
+                    iteration=state.iteration + 1,
+                    max_iterations=state.max_iterations,
+                    goal=goal,
+                )
 
-            # Step 1 — Plan (always uses memory context).
-            plan = await self._planner.plan(
-                goal=goal,
-                memory_context=state.memory_context,
-            )
-            state.plan = plan
-            graph = self._build_graph(plan)
-
-            # Step 2 — Execute tasks.
-            while not graph.is_complete():
-                ready_tasks = graph.get_ready()
-                if not ready_tasks:
-                    logger.warning("coordinator.no_ready_tasks")
-                    break
-
-                for task in ready_tasks:
-                    graph.update_status(task.id, TaskStatus.RUNNING)
-
-                    result = await self._executor.execute(task)
-                    state.completed_results[result.task_id] = result
-
-                    new_status = (
-                        TaskStatus.COMPLETED
-                        if result.status is TaskStatus.COMPLETED
-                        else TaskStatus.FAILED
+                # Step 1 — Plan (always uses memory context).
+                with tracer.span("Planner", category="agent"):
+                    plan = await self._planner.plan(
+                        goal=goal,
+                        memory_context=state.memory_context,
                     )
-                    graph.update_status(task.id, new_status)
+                state.plan = plan
+                graph = self._build_graph(plan)
 
-                    # Step 3 — Reflect (before storing so assessment is available).
-                    assessment = await self._reflection.reflect(result)
-
-                    # Store in memory with feedback loop + assessment.
-                    await self._memory_manager.store_result(
-                        conversation_id=conversation_id,
-                        result=result,
-                        assessment=assessment,
-                    )
-
-                    handled = self._handle_reflection_decision(
-                        decision=assessment.decision,
-                        assessment=assessment,
-                        graph=graph,
-                        task=task,
-                    )
-                    if handled == "abort":
-                        state.record_error(assessment.reason)
+                # Step 2 — Execute tasks.
+                while not graph.is_complete():
+                    ready_tasks = graph.get_ready()
+                    if not ready_tasks:
+                        logger.warning("coordinator.no_ready_tasks")
                         break
 
-            state.iteration += 1
+                    for task in ready_tasks:
+                        graph.update_status(task.id, TaskStatus.RUNNING)
 
-            # Check whether the result is satisfactory.
-            final_assessment = await self._reflect_on_plan(state)
-            if final_assessment.decision is ReflectionDecision.ACCEPT:
-                break
+                        with tracer.span(f"Execute {task.id}", category="execution", task_id=task.id):
+                            result = await self._executor.execute(task)
+                            state.completed_results[result.task_id] = result
+
+                            new_status = (
+                                TaskStatus.COMPLETED
+                                if result.status is TaskStatus.COMPLETED
+                                else TaskStatus.FAILED
+                            )
+                            graph.update_status(task.id, new_status)
+
+                            # Step 3 — Reflect (before storing so assessment is available).
+                            with tracer.span("Reflection", category="agent"):
+                                assessment = await self._reflection.reflect(result)
+
+                            # Store in memory with feedback loop + assessment.
+                            with tracer.span("Memory Store", category="memory"):
+                                await self._memory_manager.store_result(
+                                    conversation_id=conversation_id,
+                                    result=result,
+                                    assessment=assessment,
+                                )
+
+                            handled = self._handle_reflection_decision(
+                                decision=assessment.decision,
+                                assessment=assessment,
+                                graph=graph,
+                                task=task,
+                            )
+                            if handled == "abort":
+                                state.record_error(assessment.reason)
+                                break
+
+                state.iteration += 1
+
+                # Check whether the result is satisfactory.
+                with tracer.span("Plan-level Reflection", category="agent"):
+                    final_assessment = await self._reflect_on_plan(state)
+                if final_assessment.decision is ReflectionDecision.ACCEPT:
+                    break
 
         # Assemble final answer.
         final_answer = self._assemble_answer(state)
@@ -199,6 +216,7 @@ class Coordinator:
             plan=state.plan,
             state=state,
             iterations=state.iteration,
+            timeline=tracer.render_tree(),
             final_decision=(
                 ReflectionDecision.ABORT
                 if state.has_errors
@@ -252,6 +270,7 @@ class Coordinator:
                     id=str(uuid4()),
                     description=task.description,
                     dependencies=[task.id],
+                    capability=task.capability,
                     tool_name=task.tool_name,
                 )
                 graph.add_task(follow_up, depends_on=[task.id])

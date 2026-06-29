@@ -29,7 +29,8 @@ class Task(BaseModel):
         id: Unique task identifier.
         description: Human-readable description of what to do.
         status: Current lifecycle status.
-        tool_name: Optional tool to use for execution (e.g. ``"web_search"``).
+        capability: Abstract capability needed (e.g. ``"search_web"``).
+        tool_name: Resolved concrete tool name, set at execution time.
         tool_args: Arguments to pass to the tool, if any.
         result: Text output produced by executing this task.
         error: Error message if the task failed.
@@ -42,7 +43,8 @@ class Task(BaseModel):
     id: str = Field(description="Unique task identifier.")
     description: str = Field(min_length=1, description="What to do.")
     status: TaskStatus = Field(default=TaskStatus.PENDING, description="Current status.")
-    tool_name: str | None = Field(default=None, description="Tool to invoke.")
+    capability: str | None = Field(default=None, description="Capability needed (e.g. 'search_web').")
+    tool_name: str | None = Field(default=None, description="Resolved tool name (set at execution time).")
     tool_args: dict[str, object] = Field(default_factory=dict, description="Tool arguments.")
     result: str | None = Field(default=None, description="Execution output.")
     error: str | None = Field(default=None, description="Error message.")

@@ -22,6 +22,10 @@ class ListDirectoryTool(Tool):
         return "List files and directories at the given path. Optionally filter by glob pattern."
 
     @property
+    def capabilities(self) -> list[str]:
+        return ["list_directory"]
+
+    @property
     def schema(self) -> ToolSchema:
         return ToolSchema(
             name=self.name,

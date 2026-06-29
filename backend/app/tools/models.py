@@ -38,6 +38,7 @@ class ToolSchema:
     name: str
     description: str = ""
     parameters: Sequence[ToolParameter] = field(default_factory=list)
+    capabilities: Sequence[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)

@@ -21,6 +21,10 @@ class GitHubPullRequestsTool(Tool):
         return "List pull requests from a GitHub repository."
 
     @property
+    def capabilities(self) -> list[str]:
+        return ["get_pull_requests"]
+
+    @property
     def schema(self) -> ToolSchema:
         return ToolSchema(
             name=self.name,

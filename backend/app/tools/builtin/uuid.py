@@ -21,6 +21,10 @@ class UuidTool(Tool):
         return "Generate one or more UUIDs (version 4)."
 
     @property
+    def capabilities(self) -> list[str]:
+        return ["generate_uuid"]
+
+    @property
     def schema(self) -> ToolSchema:
         return ToolSchema(
             name=self.name,
@@ -29,6 +33,7 @@ class UuidTool(Tool):
                 ToolParameter(name="count", type_="integer", description="Number of UUIDs to generate", required=False, default=1),
                 ToolParameter(name="version", type_="integer", description="UUID version (4 only)", required=False, default=4),
             ],
+            capabilities=self.capabilities,
         )
 
     async def _execute(self, context: ToolContext, **kwargs: Any) -> ToolResult:

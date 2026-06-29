@@ -22,6 +22,10 @@ class SearchFilesTool(Tool):
         return "Search for files by glob pattern or grep text content within files."
 
     @property
+    def capabilities(self) -> list[str]:
+        return ["search_files"]
+
+    @property
     def schema(self) -> ToolSchema:
         return ToolSchema(
             name=self.name,

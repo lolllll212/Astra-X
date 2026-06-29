@@ -21,6 +21,10 @@ class ReadFileTool(Tool):
         return "Read the contents of a file at the given path."
 
     @property
+    def capabilities(self) -> list[str]:
+        return ["read_file", "access_file_content"]
+
+    @property
     def schema(self) -> ToolSchema:
         return ToolSchema(
             name=self.name,

@@ -1,13 +1,15 @@
 """Task executor agent.
 
 The :class:`Executor` runs individual tasks produced by the planner.
-It may invoke tools (web search, code execution, etc.) or use the LLM
-to generate a direct response, depending on the task's configuration.
+It resolves capabilities to concrete tool names via the
+:class:`CapabilityRegistry`, then invokes tools or uses the LLM to
+generate a direct response.
 """
 
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from app.agents.base import Agent, AgentConfig
@@ -21,25 +23,27 @@ from app.domain.message import Message, TextBlock
 from app.llm.models import CompletionRequest, CompletionResponse, GenerationParams
 from app.llm.router import LLMRouter
 
+if TYPE_CHECKING:
+    from app.tools.capabilities import CapabilityRegistry
+
 logger = get_logger(__name__)
 
 
 class Executor(Agent):
     """LLM-powered executor that runs tasks and returns results.
 
-    Usage::
-
-        executor = Executor(llm_router=router)
-        result = await executor.execute(task)
+    Resolves task capabilities to concrete tool names at execution time.
     """
 
     def __init__(
         self,
         llm_router: LLMRouter,
+        capability_registry: CapabilityRegistry | None = None,
         config: AgentConfig | None = None,
     ) -> None:
         super().__init__(config)
         self._llm_router = llm_router
+        self._capability_registry = capability_registry
 
     async def execute(self, task: Task) -> ExecutionResult:
         """Execute a single task and return the result.
@@ -58,16 +62,29 @@ class Executor(Agent):
         started_at = datetime.now(UTC)
         task_id = task.id
 
+        # Resolve capability to concrete tool name.
+        tool_name: str | None = task.tool_name
+        if tool_name is None and task.capability is not None and self._capability_registry is not None:
+            try:
+                tool_name = self._capability_registry.resolve_name(task.capability)
+            except Exception:
+                logger.warning(
+                    "agent.capability_unresolved",
+                    capability=task.capability,
+                    task_id=task_id,
+                )
+
         logger.info(
             "agent.task_executing",
             task_id=task_id,
             description=task.description,
-            tool=task.tool_name,
+            capability=task.capability,
+            tool=tool_name,
         )
 
         try:
-            if task.tool_name:
-                output = await self._execute_tool(task)
+            if tool_name:
+                output = await self._execute_tool(task, tool_name)
             else:
                 output = await self._execute_llm(task)
 
@@ -75,7 +92,7 @@ class Executor(Agent):
                 task_id=task_id,
                 status=TaskStatus.COMPLETED,
                 output=output,
-                tool_name=task.tool_name,
+                tool_name=tool_name,
                 started_at=started_at,
                 completed_at=datetime.now(UTC),
             )
@@ -159,25 +176,30 @@ class Executor(Agent):
                 parts.append(block.text)
         return "".join(parts)
 
-    async def _execute_tool(self, task: Task) -> str:
-        """Execute a tool call (placeholder).
+    async def _execute_tool(self, task: Task, tool_name: str) -> str:
+        """Execute a tool call.
 
-        Real tool execution will be implemented in Phase 8. For now,
-        this method returns a descriptive message.
+        In the agent pipeline the executor does not have a direct tool
+        registry reference — tool resolution happens through the
+        coordinator's :class:`ToolExecutor`. This method prepares the
+        call for the coordinator to dispatch.
 
         Args:
-            task: The task specifying a tool to invoke.
+            task: The task specifying a capability to invoke.
+            tool_name: The resolved concrete tool name.
 
         Returns:
-            A placeholder result string.
+            A placeholder result string until the coordinator dispatches
+            the actual tool call.
         """
-        tool_name = task.tool_name or "unknown"
         logger.info(
-            "agent.tool_not_implemented",
+            "agent.tool_executing",
             tool_name=tool_name,
+            capability=task.capability,
             task_id=task.id,
         )
         return (
-            f"[Tool '{tool_name}' is not yet implemented. "
+            f"[Tool '{tool_name}' capability '{task.capability}' "
+            f"will be executed by the coordinator. "
             f"Task: {task.description}]"
         )

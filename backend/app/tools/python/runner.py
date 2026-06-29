@@ -29,6 +29,10 @@ class PythonRunnerTool(Tool):
         return "Execute Python code and return stdout, stderr, and the return value. Supports passing input variables."
 
     @property
+    def capabilities(self) -> list[str]:
+        return ["execute_python"]
+
+    @property
     def schema(self) -> ToolSchema:
         return ToolSchema(
             name=self.name,

@@ -21,6 +21,10 @@ class JsonTool(Tool):
         return "Parse, validate, stringify, or query JSON data. Operations: parse (string → object), stringify (object → pretty string), validate, query (dot-path extraction)."
 
     @property
+    def capabilities(self) -> list[str]:
+        return ["manipulate_json"]
+
+    @property
     def schema(self) -> ToolSchema:
         return ToolSchema(
             name=self.name,
@@ -32,6 +36,7 @@ class JsonTool(Tool):
                 ToolParameter(name="path", type_="string", description="Dot-separated path for query operation (e.g. 'data.items.0.name')", required=False),
                 ToolParameter(name="indent", type_="integer", description="Indentation level for stringify operation", required=False, default=2),
             ],
+            capabilities=self.capabilities,
         )
 
     async def _execute(self, context: ToolContext, **kwargs: Any) -> ToolResult:

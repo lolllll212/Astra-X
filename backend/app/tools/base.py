@@ -14,6 +14,10 @@ class Tool(ABC):
     Subclasses must implement ``name``, ``description``, ``schema``, and
     ``execute()``.  Tools are stateless: all mutable context flows through
     the :class:`ToolContext` parameter.
+
+    Each tool also declares one or more **capabilities** — abstract
+    identifiers (e.g. ``"search_web"``, ``"calculate"``) that the planner
+    uses instead of concrete tool names.
     """
 
     @property
@@ -30,6 +34,17 @@ class Tool(ABC):
     @abstractmethod
     def schema(self) -> ToolSchema:
         """Structured schema describing parameters for the LLM."""
+
+    @property
+    def capabilities(self) -> list[str]:
+        """Capability identifiers this tool provides.
+
+        By default the tool's own name is its sole capability.
+        Subclasses should override this to declare more specific or
+        additional capabilities (e.g. ``["search_web"]`` instead of
+        ``["web_search"]``).
+        """
+        return [self.name]
 
     async def execute(self, context: ToolContext, **kwargs: Any) -> ToolResult:
         """Execute the tool with the given context and keyword arguments.

@@ -61,3 +61,11 @@ class SandboxViolation(ToolError):
         super().__init__(f"Sandbox violation in '{tool_name}': {operation}")
         self.tool_name = tool_name
         self.operation = operation
+
+
+class CapabilityNotFoundError(ToolError):
+    """Raised when a capability does not match any registered tool."""
+
+    def __init__(self, capability: str) -> None:
+        super().__init__(f"No tool provides capability '{capability}'")
+        self.capability = capability
