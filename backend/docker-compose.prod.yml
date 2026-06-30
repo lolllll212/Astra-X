@@ -1,0 +1,61 @@
+# Astra X — production docker-compose overrides
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# Differences from dev:
+#   • No port exposure to the host (reverse-proxy handles ingress).
+#   • Restart policy: always (survives reboots).
+#   • Production env vars are loaded from .env.production.
+#   • Resource limits prevent runaway containers.
+#   • Logging to a dedicated driver instead of json-file.
+
+services:
+  app:
+    env_file:
+      - .env.production
+    ports: []
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: "2G"
+        reservations:
+          cpus: "0.5"
+          memory: "512M"
+    logging:
+      driver: "local"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  db:
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: "2G"
+        reservations:
+          cpus: "0.5"
+          memory: "1G"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./scripts/backup-db.sh:/usr/local/bin/backup-db:ro
+    environment:
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    secrets:
+      - db_password
+
+  redis:
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: "512M"
+
+secrets:
+  db_password:
+    file: ./secrets/db_password.txt

@@ -17,7 +17,9 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
+from app.config.settings import Settings
 from app.core.logging import get_logger
+from app.core.security import InjectionResult, PromptInjectionDetector, SanitizationAction
 from app.database.repositories.conversation_repository import ConversationRepository
 from app.database.repositories.message_repository import MessageRepository
 from app.database.repositories.usage_repository import UsageRepository
@@ -89,6 +91,8 @@ class ChatService:
         agent_executor: AgentExecutor | None = None,
         reflection: Reflection | None = None,
         memory_manager: MemoryManager | None = None,
+        injection_detector: PromptInjectionDetector | None = None,
+        settings: Settings | None = None,
     ) -> None:
         self._conversation_repo = conversation_repo
         self._message_repo = message_repo
@@ -112,6 +116,44 @@ class ChatService:
         self._prompt_builder = prompt_builder
         self._token_counter = token_counter
 
+        # Security
+        self._settings = settings
+        self._injection_detector = injection_detector or PromptInjectionDetector()
+
+    def _check_injection(
+        self,
+        user_content: list[ContentBlock],
+    ) -> InjectionResult | None:
+        """Check user content for prompt injection.
+
+        Returns an :class:`InjectionResult` if the input should be
+        blocked, or ``None`` if it passes the check.
+
+        The block threshold is read from the settings if available,
+        falling back to 0.8.
+        """
+        if self._injection_detector is None:
+            return None
+
+        threshold = 0.8
+        if self._settings is not None:
+            threshold = self._settings.prompt_injection_block_threshold
+
+        if threshold <= 0.0:
+            return None
+
+        result = self._injection_detector.analyse_content_blocks(user_content)
+        if result.detected and result.confidence >= threshold:
+            return InjectionResult(
+                detected=True,
+                confidence=result.confidence,
+                category=result.category,
+                matched_patterns=result.matched_patterns,
+                action=SanitizationAction.BLOCK,
+            )
+
+        return None
+
     async def process_message(
         self,
         conversation_id: str,
@@ -125,17 +167,18 @@ class ChatService:
 
         The full pipeline:
 
-        1. Load and validate the conversation.
-        2. Persist the user message.
-        3. Load conversation history.
-        4. Load memory context (if memory service wired).
-        5. Build context (if context builder wired).
-        6. Build prompt messages (if prompt builder wired).
-        7. Count tokens / trim (if token counter wired).
-        8. Route to LLM.
-        9. Persist the assistant response.
-        10. Persist usage.
-        11. Return result.
+        1. Check for prompt injection.
+        2. Load and validate the conversation.
+        3. Persist the user message.
+        4. Load conversation history.
+        5. Load memory context (if memory service wired).
+        6. Build context (if context builder wired).
+        7. Build prompt messages (if prompt builder wired).
+        8. Count tokens / trim (if token counter wired).
+        9. Route to LLM.
+        10. Persist the assistant response.
+        11. Persist usage.
+        12. Return result.
 
         Args:
             conversation_id: The conversation to continue.
@@ -150,7 +193,22 @@ class ChatService:
         Raises:
             ResourceNotFoundError: If the conversation does not exist.
         """
-        # Step 1 — Load and validate conversation.
+        # Step 1 — Check for prompt injection.
+        injection = self._check_injection(user_content)
+        if injection is not None:
+            from app.core.exceptions import ValidationError as AstraValidationError
+
+            raise AstraValidationError(
+                message="Message blocked due to security policy.",
+                details={
+                    "reason": "prompt_injection_detected",
+                    "confidence": injection.confidence,
+                    "category": injection.category,
+                    "patterns": injection.matched_patterns,
+                },
+            )
+
+        # Step 2 — Load and validate conversation.
         conversation = await self._conversation_repo.get(conversation_id)
         if conversation is None:
             from app.core.exceptions import ResourceNotFoundError
@@ -271,7 +329,22 @@ class ChatService:
         """
         from app.llm.streaming import collect_stream
 
-        # Steps 1-7: identical to non-streaming path.
+        # Step 1 — Check for prompt injection.
+        injection = self._check_injection(user_content)
+        if injection is not None:
+            from app.core.exceptions import ValidationError as AstraValidationError
+
+            raise AstraValidationError(
+                message="Message blocked due to security policy.",
+                details={
+                    "reason": "prompt_injection_detected",
+                    "confidence": injection.confidence,
+                    "category": injection.category,
+                    "patterns": injection.matched_patterns,
+                },
+            )
+
+        # Steps 2-8: identical to non-streaming path.
         conversation = await self._conversation_repo.get(conversation_id)
         if conversation is None:
             from app.core.exceptions import ResourceNotFoundError
@@ -381,6 +454,21 @@ class ChatService:
         """
         from app.llm.streaming import StreamCollector
         from app.services.coordinator import ChatCoordinator
+
+        # Step 1 — Check for prompt injection.
+        injection = self._check_injection(user_content)
+        if injection is not None:
+            from app.core.exceptions import ValidationError as AstraValidationError
+
+            raise AstraValidationError(
+                message="Message blocked due to security policy.",
+                details={
+                    "reason": "prompt_injection_detected",
+                    "confidence": injection.confidence,
+                    "category": injection.category,
+                    "patterns": injection.matched_patterns,
+                },
+            )
 
         conversation = await self._conversation_repo.get(conversation_id)
         if conversation is None:

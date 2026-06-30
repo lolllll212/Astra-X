@@ -1,14 +1,17 @@
-"""Run Python code in a subprocess with a timeout.
+"""Run Python code in a subprocess with sandbox enforcement.
 
-WARNING: This tool executes arbitrary Python code.  Enable only in
-sandboxed environments or when the caller is fully trusted.
+Uses :class:`~app.tools.security.sandbox_runner.HardenedSandbox` to
+enforce module restrictions, network/filesystem access control, and
+output limits defined in :class:`~app.tools.python.sandbox.SandboxConfig`.
+
+WARNING: Enabling Python execution without a sandbox is dangerous.
+Outside development, execution is blocked unless at least one sandbox
+policy is enforced.
 """
 
 from __future__ import annotations
 
-import asyncio
 import json
-import sys
 from typing import Any
 
 from app.config.settings import Environment
@@ -17,9 +20,17 @@ from app.tools.context import ToolContext
 from app.tools.models import ToolParameter, ToolSchema
 from app.tools.python.sandbox import SandboxConfig
 from app.tools.result import ToolResult
+from app.tools.security.sandbox_runner import HardenedSandbox
 
 
 class PythonRunnerTool(Tool):
+    """Execute Python code in a sandboxed subprocess.
+
+    The tool enforces module restrictions, network/filesystem access
+    control, and output limits via :class:`HardenedSandbox`.  Outside
+    development environments the sandbox must be explicitly enabled.
+    """
+
     @property
     def name(self) -> str:
         return "python_repl"
@@ -73,85 +84,23 @@ class PythonRunnerTool(Tool):
             except json.JSONDecodeError as exc:
                 return ToolResult(success=False, error=f"Invalid vars JSON: {exc}")
 
-        runner_code = "\n".join([
-            "import json, sys, traceback",
-            "_code_ = sys.stdin.read()",
-            "_result = {'stdout': '', 'stderr': '', 'return': None, 'error': None}",
-            "try:",
-            "    import io",
-            "    _stdout = io.StringIO()",
-            "    _stderr = io.StringIO()",
-            "    sys.stdout = _stdout",
-            "    sys.stderr = _stderr",
-            "    _locals = {}",
-            f"    _globals = {json.dumps(import_vars)}",
-            "    exec(compile(_code_, '<python_repl>', 'exec'), _globals, _locals)",
-            "    _result['stdout'] = _stdout.getvalue()",
-            "    _result['stderr'] = _stderr.getvalue()",
-            "    _result['return'] = str(_locals.get('_return', None))",
-            "except BaseException:",
-            "    _result['error'] = traceback.format_exc()",
-            "finally:",
-            "    sys.stdout = sys.__stdout__",
-            "    sys.stderr = sys.__stderr__",
-            "print(json.dumps(_result))",
-        ])
+        sandbox_runner = HardenedSandbox(sandbox)
+        result = await sandbox_runner.run(
+            code,
+            input_vars=import_vars,
+            timeout=timeout,
+        )
 
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                sys.executable,
-                "-c",
-                runner_code,
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-
-            try:
-                stdout, stderr = await asyncio.wait_for(
-                    proc.communicate(input=code.encode("utf-8")),
-                    timeout=timeout,
-                )
-            except TimeoutError:
-                proc.kill()
-                return ToolResult(success=False, error=f"Execution timed out after {timeout}s")
-        except OSError as exc:
-            return ToolResult(success=False, error=str(exc))
-
-        if proc.returncode != 0:
+        if not result.success:
             return ToolResult(
                 success=False,
-                error=f"Process exited with code {proc.returncode}",
-                metadata={"stderr": stderr.decode("utf-8", errors="replace")},
-            )
-
-        try:
-            result_data = json.loads(stdout.decode("utf-8", errors="replace"))
-        except json.JSONDecodeError:
-            return ToolResult(
-                success=False,
-                error="Failed to parse REPL output",
-                metadata={"raw_stdout": stdout.decode("utf-8", errors="replace")},
-            )
-
-        output_lines = []
-        if result_data.get("stdout"):
-            output_lines.append(result_data["stdout"])
-        if result_data.get("return") and result_data["return"] != "None":
-            output_lines.append(f"Return value: {result_data['return']}")
-
-        combined = "\n".join(output_lines) if output_lines else "(no output)"
-
-        if result_data.get("error"):
-            return ToolResult(
-                success=False,
-                error=result_data["error"],
-                output=combined,
-                metadata={"stderr": result_data.get("stderr", "")},
+                error=result.error or "Unknown error",
+                output=result.output,
+                metadata={"stderr": result.stderr} if result.stderr else None,
             )
 
         return ToolResult(
             success=True,
-            output=combined,
-            metadata={"stderr": result_data.get("stderr", ""), "return": result_data.get("return")},
+            output=result.output,
+            metadata={"stderr": result.stderr, "return": result.return_value} if result.return_value else None,
         )

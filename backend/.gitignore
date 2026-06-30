@@ -42,5 +42,14 @@ htmlcov/
 .DS_Store
 Thumbs.db
 
+# --- Data ---
+data/
+
+# --- Backups ---
+backups/
+
+# --- Secrets ---
+secrets/
+
 # --- Project-specific ---
 astra_x.db

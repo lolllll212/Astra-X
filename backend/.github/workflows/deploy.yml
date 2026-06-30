@@ -1,0 +1,96 @@
+name: Deploy
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ghcr.io/astra-x/backend
+  PYTHON_VERSION: "3.13"
+
+jobs:
+  test-and-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: pip install -e ".[dev,redis]"
+      - run: ruff check app/ tests/
+      - run: mypy app/
+      - run: pytest --cov=app --cov-report=term-missing
+
+  build-and-push:
+    needs: test-and-lint
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract version from tag
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=short
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: "v1.30"
+
+      - name: Set Kubeconfig
+        env:
+          KUBECONFIG_B64: ${{ secrets.KUBECONFIG_B64 }}
+        run: |
+          mkdir -p ~/.kube
+          echo "$KUBECONFIG_B64" | base64 -d > ~/.kube/config
+
+      - name: Update image tag in kustomize
+        working-directory: ./backend/k8s
+        run: |
+          TAG=$(echo "${{ github.ref }}" | sed 's/refs\/tags\/v//')
+          kustomize edit set image ghcr.io/astra-x/backend:$TAG
+
+      - name: Apply manifests
+        working-directory: ./backend/k8s
+        run: kubectl apply -k .
+
+      - name: Rollout status
+        run: |
+          kubectl rollout status deployment/astra-x-backend -n astra-x --timeout=5m
+          kubectl rollout status statefulset/postgres -n astra-x --timeout=5m

@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: astra-x-config
+  namespace: astra-x
+  labels:
+    app.kubernetes.io/name: astra-x
+    app.kubernetes.io/part-of: astra-x
+data:
+  ASTRA_ENVIRONMENT: "production"
+  ASTRA_DEBUG: "false"
+  ASTRA_APP_NAME: "Astra_X"
+  ASTRA_APP_VERSION: "0.1.0"
+  ASTRA_API_V1_PREFIX: "/api/v1"
+  ASTRA_HOST: "0.0.0.0"
+  ASTRA_PORT: "8000"
+  ASTRA_LOG_LEVEL: "INFO"
+  ASTRA_LOG_FORMAT: "json"
+  ASTRA_ALLOWED_HOSTS: "astra-x.example.com"
+  ASTRA_CORS_ORIGINS: "https://astra-x.example.com"
+  ASTRA_CORS_ALLOW_CREDENTIALS: "true"
+  ASTRA_RATE_LIMIT_REQUESTS_PER_MINUTE: "60"
+  ASTRA_DATABASE_URL: "postgresql+asyncpg://astra:astra@postgres:5432/astra"
+  ASTRA_DATABASE_ECHO: "false"
+  ASTRA_DATABASE_POOL_SIZE: "10"
+  ASTRA_DEFAULT_LLM_PROVIDER: "ollama"
+  ASTRA_DEFAULT_LLM_MODEL: "llama3.1"
+  ASTRA_LLM_REQUEST_TIMEOUT_SECONDS: "120.0"
+  ASTRA_OLLAMA_BASE_URL: "http://ollama:11434"
+  ASTRA_LM_STUDIO_BASE_URL: "http://lm-studio:1234/v1"
+  ASTRA_EMBEDDING_PROVIDER: "ollama"
+  ASTRA_EMBEDDING_MODEL: "nomic-embed-text"
+  ASTRA_EMBEDDING_DIMENSIONS: "768"

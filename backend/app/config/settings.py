@@ -277,6 +277,48 @@ class Settings(BaseSettings):
         description="Dimensionality of embedding vectors.",
     )
 
+    # --- Security hardening (Phase 1) ------------------------------------------
+    sandbox_enabled: bool = Field(
+        default=False,
+        description="Enable the hardened Python execution sandbox.",
+    )
+    sandbox_timeout_seconds: int = Field(
+        default=10,
+        ge=1,
+        le=120,
+        description="Default timeout for sandboxed Python execution.",
+    )
+    sandbox_max_memory_mb: int = Field(
+        default=256,
+        ge=16,
+        description="Maximum memory for sandboxed Python execution (MiB).",
+    )
+    sandbox_blocked_modules: list[str] = Field(
+        default_factory=lambda: [
+            "os", "subprocess", "shutil", "signal", "ctypes", "socket",
+            "http", "urllib", "requests", "httpx", "pathlib", "tempfile",
+        ],
+        description="Modules blocked in the Python sandbox.",
+    )
+    sandbox_network_access: bool = Field(
+        default=False,
+        description="Whether sandboxed Python code can make network requests.",
+    )
+    sandbox_filesystem_access: bool = Field(
+        default=False,
+        description="Whether sandboxed Python code can read/write files.",
+    )
+    prompt_injection_detection_enabled: bool = Field(
+        default=True,
+        description="Enable prompt injection detection on user input.",
+    )
+    prompt_injection_block_threshold: float = Field(
+        default=0.8,
+        ge=0.0,
+        le=1.0,
+        description="Confidence threshold above which injection blocks the request (0-1).",
+    )
+
     # --- Field validators -----------------------------------------------------------
 
     @field_validator("allowed_hosts", "cors_origins", mode="before")
