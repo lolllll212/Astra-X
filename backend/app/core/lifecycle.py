@@ -384,6 +384,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     app.state.llm_router = llm_router
 
+    # Initialise observability.
+    _init_observability(settings, app)
+
     # Initialise the memory pipeline.
     from app.memory import SQLiteVectorStore
     from app.memory.manager import MemoryManager
@@ -419,8 +422,52 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("shutdown.begin")
 
     await _run_shutdown_hooks(container)
+    _shutdown_observability()
     await _shutdown_container(container)
     await _dispose_database_engine(engine)
 
     elapsed_shutdown: float = time.monotonic() - shutdown_start
     logger.info("shutdown.complete", elapsed_ms=round(elapsed_shutdown * 1000))
+
+
+def _init_observability(settings: Settings, app: FastAPI) -> None:
+    """Initialise Prometheus metadata and optional OpenTelemetry.
+
+    This is called during application startup, after the LLM router has
+    been initialised but before the memory pipeline.
+    """
+    try:
+        from app.observability import app_info, metrics_registry
+
+        app_info.info({
+            "version": settings.app_version,
+            "environment": settings.environment.value,
+        })
+
+        if settings.metrics_enabled:
+            logger.info(
+                "observability.prometheus_enabled",
+                prefix=settings.metrics_prefix,
+            )
+
+        from app.observability.opentelemetry import is_otel_available, setup_otel
+
+        if is_otel_available() and settings.otel_exporter_otlp_endpoint:
+            otel_ok = setup_otel(settings)
+            if otel_ok:
+                app.state._otel_initialized = True
+                logger.info("observability.opentelemetry_enabled")
+    except ImportError:
+        logger.info("observability.prometheus_client_not_installed")
+    except Exception as exc:
+        logger.warning("observability.init_failed", error=str(exc))
+
+
+def _shutdown_observability() -> None:
+    """Flush and shut down OpenTelemetry (if initialised)."""
+    try:
+        from app.observability.opentelemetry import shutdown_otel
+
+        shutdown_otel()
+    except Exception as exc:
+        logger.warning("observability.shutdown_failed", error=str(exc))

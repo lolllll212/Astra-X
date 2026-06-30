@@ -1,9 +1,9 @@
 """HTTP middleware for the API layer.
 
-Provides request ID injection, timing measurement, structured request
-logging, and security headers. Each concern is implemented as a separate
-:class:`starlette.middleware.base.BaseHTTPMiddleware` subclass so they
-can be individually composed, tested, and excluded if needed.
+Provides request ID injection, timing measurement, Prometheus metrics,
+structured request logging, and security headers. Each concern is
+implemented as a separate :class:`starlette.middleware.base.BaseHTTPMiddleware`
+subclass so they can be individually composed, tested, and excluded.
 """
 
 from __future__ import annotations
@@ -23,12 +23,17 @@ logger = get_logger(__name__)
 
 
 class RequestIDMiddleware(BaseHTTPMiddleware):
-    """Inject a unique request ID into every request.
+    """Inject a unique request ID into every request and propagate
+    W3C trace context.
 
     The request ID is read from the ``X-Request-ID`` header if provided
     by the caller; otherwise a new UUID is generated. It is stored on
     ``request.state.request_id`` for use by downstream handlers and
     reflected back in the response header.
+
+    If ``ASTRA_TRACE_PROPAGATION_ENABLED`` is True (default), the W3C
+    ``traceparent`` header is parsed and the trace id is stored on
+    ``request.state.trace_id`` so the :class:`Tracer` can use it.
     """
 
     async def dispatch(
@@ -38,6 +43,20 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
     ) -> Response:
         request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
         request.state.request_id = request_id
+
+        trace_id: str | None = None
+        settings = getattr(request.app.state, "settings", None)
+        if settings and getattr(settings, "trace_propagation_enabled", True):
+            traceparent = request.headers.get("traceparent")
+            if traceparent:
+                from app.core.tracing import parse_traceparent
+
+                parsed = parse_traceparent(traceparent)
+                if parsed is not None:
+                    trace_id = parsed[0]
+
+        request.state.trace_id = trace_id
+
         response = await call_next(request)
         response.headers["X-Request-ID"] = request_id
         return response
@@ -113,6 +132,45 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         for header, value in self._SECURITY_HEADERS.items():
             response.headers[header] = value
         return response
+
+
+class PrometheusMetricsMiddleware(BaseHTTPMiddleware):
+    """Instrument HTTP requests with Prometheus metrics.
+
+    Records:
+    * ``astra_x_http_requests_total`` (counter, by method/path/status)
+    * ``astra_x_http_request_duration_seconds`` (histogram, by method/path)
+    * ``astra_x_http_requests_in_flight`` (gauge, by method)
+    """
+
+    async def dispatch(
+        self,
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        method = request.method
+        # Normalise path for label cardinality — replace dynamic segments
+        # with a placeholder.  The metric path is always normalised so
+        # Prometheus label cardinality stays bounded.
+        path = request.url.path.rstrip("/")
+
+        try:
+            from app.observability import in_flight_requests, request_latency, request_total
+        except ImportError:
+            return await call_next(request)
+
+        in_flight_requests.labels(method=method).inc()
+        start = time.monotonic()
+        response: Response | None = None
+        try:
+            response = await call_next(request)
+            return response
+        finally:
+            elapsed = time.monotonic() - start
+            status = str(response.status_code) if response is not None else "500"
+            request_total.labels(method=method, path=path, status=status).inc()
+            request_latency.labels(method=method, path=path).observe(elapsed)
+            in_flight_requests.labels(method=method).dec()
 
 
 _EXEMPT_PATHS = {"/health", "/metrics", "/api/v1/health", "/api/v1/metrics", "/docs", "/openapi.json", "/redoc"}

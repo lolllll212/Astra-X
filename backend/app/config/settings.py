@@ -319,6 +319,35 @@ class Settings(BaseSettings):
         description="Confidence threshold above which injection blocks the request (0-1).",
     )
 
+    # --- Observability ------------------------------------------
+    metrics_enabled: bool = Field(
+        default=True,
+        description="Enable Prometheus metrics endpoint and collection.",
+    )
+    metrics_prefix: str = Field(
+        default="astra_x",
+        min_length=1,
+        description="Prefix applied to all Prometheus metric names.",
+    )
+    otel_service_name: str = Field(
+        default="astra-x-backend",
+        description="Service name reported to OpenTelemetry.",
+    )
+    otel_exporter_otlp_endpoint: str | None = Field(
+        default=None,
+        description="OTLP exporter endpoint (e.g. http://otel-collector:4318). None disables OTel export.",
+    )
+    otel_traces_sampler_ratio: float = Field(
+        default=0.1,
+        ge=0.0,
+        le=1.0,
+        description="Fraction of traces to sample when OTel is enabled (0.0-1.0).",
+    )
+    trace_propagation_enabled: bool = Field(
+        default=True,
+        description="Enable W3C traceparent header propagation.",
+    )
+
     # --- Field validators -----------------------------------------------------------
 
     @field_validator("allowed_hosts", "cors_origins", mode="before")

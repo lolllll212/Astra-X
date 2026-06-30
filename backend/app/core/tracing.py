@@ -25,10 +25,19 @@ request entry and all downstream code automatically shares it.
 
 The tracer is thread-safe (each span uses ``time.monotonic_ns``) and
 adds no dependencies beyond the standard library.
+
+W3C trace context propagation
+-----------------------------
+The :func:`parse_traceparent` and :func:`format_traceparent` helpers
+enable distributed trace propagation via the ``traceparent`` header
+(https://www.w3.org/TR/trace-context/).  The local ``trace_id`` and
+``span_id`` are stored on the :class:`Span` so they can be correlated
+with external systems.
 """
 
 from __future__ import annotations
 
+import random
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager, nullcontext
@@ -36,6 +45,65 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any
 from uuid import uuid4
+
+
+# -- W3C trace context helpers ----------------------------------------------
+
+_TRACE_VERSION = "00"
+
+
+def generate_trace_id() -> str:
+    """Generate a random 32-hex-character W3C trace id."""
+    return format(random.getrandbits(128), "032x")
+
+
+def generate_span_id() -> str:
+    """Generate a random 16-hex-character W3C span id."""
+    return format(random.getrandbits(64), "016x")
+
+
+def parse_traceparent(header: str | None) -> tuple[str, str] | None:
+    """Parse a W3C ``traceparent`` header into ``(trace_id, parent_span_id)``.
+
+    Returns ``None`` if the header is missing, malformed, or has an
+    unsupported version.
+
+    Example::
+
+        tp = parse_traceparent("00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01")
+        # -> ("0af7651916cd43dd8448eb211c80319c", "b7ad6b7169203331")
+    """
+    if not header:
+        return None
+    parts = header.strip().split("-")
+    if len(parts) != 4:
+        return None
+    version, trace_id, parent_span_id, trace_flags = parts
+    if version != _TRACE_VERSION:
+        return None
+    if len(trace_id) != 32 or len(parent_span_id) != 16:
+        return None
+    try:
+        int(trace_id, 16)
+        int(parent_span_id, 16)
+        int(trace_flags, 16)
+    except ValueError:
+        return None
+    return trace_id, parent_span_id
+
+
+def format_traceparent(trace_id: str, span_id: str, flags: str = "01") -> str:
+    """Format a W3C ``traceparent`` header value.
+
+    Args:
+        trace_id: 32-char hex trace id.
+        span_id: 16-char hex span id.
+        flags: 2-char hex trace flags (default ``"01"`` = sampled).
+
+    Returns:
+        A header value like ``"00-<trace_id>-<span_id>-01"``.
+    """
+    return f"{_TRACE_VERSION}-{trace_id}-{span_id}-{flags}"
 
 
 # -- request-scoped tracer --------------------------------------------------
@@ -131,6 +199,10 @@ class Span:
     completed_at_ns: int | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
     children: list[Span] = field(default_factory=list)
+    trace_id: str = ""
+    """W3C trace id for distributed trace correlation."""
+    span_id: str = ""
+    """W3C span id for distributed trace correlation."""
 
     @property
     def duration_ms(self) -> float:
@@ -170,7 +242,8 @@ class Tracer:
         print(tracer.render_tree())
     """
 
-    def __init__(self) -> None:
+    def __init__(self, trace_id: str | None = None) -> None:
+        self._trace_id: str = trace_id or generate_trace_id()
         self._root: Span | None = None
         self._stack: list[Span] = []
         set_tracer(self)
@@ -243,6 +316,7 @@ class Tracer:
         category: str = "",
         metadata: dict[str, Any] | None = None,
     ) -> Span:
+        span_id = generate_span_id()
         span = Span(
             id=str(uuid4()),
             name=name,
@@ -250,6 +324,8 @@ class Tracer:
             parent_id=self._stack[-1].id if self._stack else None,
             started_at_ns=time.monotonic_ns(),
             metadata=metadata or {},
+            trace_id=self._trace_id,
+            span_id=span_id,
         )
         if self._stack:
             self._stack[-1].children.append(span)

@@ -27,6 +27,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.api.errors import llm_error_handler, unhandled_error_handler
 from app.api.middleware import (
     AuthenticationMiddleware,
+    PrometheusMetricsMiddleware,
     RateLimitMiddleware,
     RequestIDMiddleware,
     RequestLoggingMiddleware,
@@ -90,9 +91,10 @@ __import__("app.api.lifespan")
 # 1. Capture every request for logging (outermost).
 # 2. Add security headers.
 # 3. Measure timing including all inner middleware.
-# 4. Compress response bodies.
-# 5. Assign request IDs for correlation.
-# 6. Handle CORS and host validation (innermost).
+# 4. Record Prometheus metrics (latency, counters, in-flight gauge).
+# 5. Compress response bodies.
+# 6. Assign request IDs for correlation.
+# 7. Handle CORS and host validation (innermost).
 # ---------------------------------------------------------------------------
 
 app.add_middleware(
@@ -106,6 +108,9 @@ app.add_middleware(
 )
 app.add_middleware(
     SecurityHeadersMiddleware,
+)
+app.add_middleware(
+    PrometheusMetricsMiddleware,
 )
 app.add_middleware(
     TimingMiddleware,
