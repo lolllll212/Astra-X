@@ -14,6 +14,7 @@ loaded, those capabilities are registered with the
 
 from __future__ import annotations
 
+import importlib
 from typing import TYPE_CHECKING
 
 from packaging.version import Version
@@ -23,7 +24,10 @@ from app.core.logging import get_logger
 if TYPE_CHECKING:
     from app.database.repositories.plugin_repository import PluginRepository
     from app.domain.plugin import PluginSpec
+    from app.plugins.base import Plugin, PluginContext
+    from app.services.provider_service import ProviderService
     from app.tools.capabilities import CapabilityRegistry
+    from app.tools.registry import ToolRegistry
 
 logger = get_logger(__name__)
 
@@ -99,11 +103,16 @@ class PluginManager:
         plugin_repository: PluginRepository,
         capability_registry: CapabilityRegistry | None = None,
         app_version: str = "0.0.0",
+        tool_registry: ToolRegistry | None = None,
+        provider_service: ProviderService | None = None,
     ) -> None:
         self._repo = plugin_repository
         self._capability_registry = capability_registry
         self._app_version = app_version
+        self._tool_registry = tool_registry
+        self._provider_service = provider_service
         self._loaded: dict[str, PluginSpec] = {}
+        self._plugin_instances: dict[str, Plugin] = {}
 
     # -- lifecycle ---------------------------------------------------------
 
@@ -113,6 +122,10 @@ class PluginManager:
         Each plugin is checked for core version compatibility before being
         loaded.  Incompatible plugins are skipped with a warning log.
 
+        If a plugin declares an ``entry_point``, the corresponding Python
+        class is dynamically imported and its ``on_load`` lifecycle hook
+        is called.
+
         This is called once during application startup.
 
         Returns:
@@ -120,10 +133,14 @@ class PluginManager:
         """
         specs = await self._repo.list_enabled()
         self._loaded.clear()
+        self._plugin_instances.clear()
         loaded_count = 0
         for spec in specs:
             if not _check_version_compatibility(self._app_version, spec):
                 continue
+            plugin_instance = await self._load_plugin_instance(spec)
+            if plugin_instance is not None:
+                self._plugin_instances[spec.name] = plugin_instance
             self._loaded[spec.name] = spec
             loaded_count += 1
         self._register_capabilities()
@@ -141,8 +158,10 @@ class PluginManager:
     async def reload_plugin(self, name: str) -> PluginSpec | None:
         """Reload a single plugin from the database.
 
-        The plugin is checked for core version compatibility.  If it is
-        incompatible it is removed from memory and ``None`` is returned.
+        If the plugin was previously loaded its ``on_unload`` hook is
+        called first.  The plugin is then checked for core version
+        compatibility.  If it is incompatible it is removed from memory
+        and ``None`` is returned.
 
         Args:
             name: The plugin name.
@@ -151,6 +170,18 @@ class PluginManager:
             The updated spec, or ``None`` if the plugin no longer exists
             or is incompatible with the current app version.
         """
+        # Unload existing instance if present.
+        old = self._plugin_instances.pop(name, None)
+        if old is not None:
+            try:
+                await old.on_unload()
+            except Exception as exc:
+                logger.warning(
+                    "plugin_manager.reload_unload_failed",
+                    plugin=name,
+                    error=str(exc),
+                )
+
         spec = await self._repo.find_by_name(name)
         if spec is None:
             self._loaded.pop(name, None)
@@ -160,15 +191,38 @@ class PluginManager:
             self._loaded.pop(name, None)
             self._register_capabilities()
             return None
+
+        plugin_instance = await self._load_plugin_instance(spec)
+        if plugin_instance is not None:
+            self._plugin_instances[name] = plugin_instance
+
         self._loaded[name] = spec
         self._register_capabilities()
         return spec
 
-    def unload_all(self) -> None:
-        """Clear all loaded plugins from memory."""
+    async def unload_all(self) -> None:
+        """Unload all plugins, calling each plugin's ``on_unload`` hook."""
+        errors = 0
+        for name, plugin in list(self._plugin_instances.items()):
+            try:
+                await plugin.on_unload()
+            except Exception as exc:
+                logger.warning(
+                    "plugin_manager.unload_failed",
+                    plugin=name,
+                    error=str(exc),
+                )
+                errors += 1
+        self._plugin_instances.clear()
         self._loaded.clear()
         self._register_capabilities()
-        logger.info("plugin_manager.unloaded_all")
+        if errors:
+            logger.warning(
+                "plugin_manager.unloaded_all_with_errors",
+                errors=errors,
+            )
+        else:
+            logger.info("plugin_manager.unloaded_all")
 
     # -- queries -----------------------------------------------------------
 
@@ -225,6 +279,68 @@ class PluginManager:
         ]
 
     # -- internal ----------------------------------------------------------
+
+    async def _load_plugin_instance(self, spec: PluginSpec) -> Plugin | None:
+        """Dynamically import and activate a plugin from its ``entry_point``.
+
+        If the spec has no ``entry_point`` the plugin is loaded in
+        metadata-only mode (no Python class is instantiated).
+
+        Args:
+            spec: The plugin specification.
+
+        Returns:
+            The activated plugin instance, or ``None`` if loading failed.
+        """
+        if not spec.entry_point:
+            return None
+
+        try:
+            module_path, class_name = spec.entry_point.split(":", 1)
+            module = importlib.import_module(module_path)
+            plugin_cls = getattr(module, class_name)
+        except Exception as exc:
+            logger.warning(
+                "plugin_manager.import_failed",
+                plugin=spec.name,
+                entry_point=spec.entry_point,
+                error=str(exc),
+            )
+            return None
+
+        try:
+            plugin = plugin_cls()
+        except Exception as exc:
+            logger.warning(
+                "plugin_manager.instantiate_failed",
+                plugin=spec.name,
+                error=str(exc),
+            )
+            return None
+
+        from app.plugins.base import PluginContext as _PluginContext
+
+        context = _PluginContext(
+            tool_registry=self._tool_registry,
+            provider_service=self._provider_service,
+            capability_registry=self._capability_registry,
+        )
+        try:
+            await plugin.on_load(context)
+        except Exception as exc:
+            logger.warning(
+                "plugin_manager.on_load_failed",
+                plugin=spec.name,
+                error=str(exc),
+            )
+            return None
+
+        logger.info(
+            "plugin_manager.activated",
+            plugin=spec.name,
+            class_name=class_name,
+        )
+        return plugin
 
     def _register_capabilities(self) -> None:
         """Re-register all plugin-declared capabilities with the

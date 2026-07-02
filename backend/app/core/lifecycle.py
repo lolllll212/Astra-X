@@ -384,6 +384,44 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     app.state.llm_router = llm_router
 
+    # Initialise the tool registry and capability registry.
+    from app.tools.registry import ToolRegistry
+    from app.tools.capabilities import CapabilityRegistry
+    from app.tools.builtin import (
+        CalculatorTool,
+        DateTimeTool,
+        JsonTool,
+        TextTool,
+        UuidTool,
+    )
+
+    tool_registry = ToolRegistry()
+    for builtin_tool_cls in (CalculatorTool, DateTimeTool, JsonTool, TextTool, UuidTool):
+        try:
+            tool_registry.register(builtin_tool_cls())
+        except Exception as exc:
+            logger.warning(
+                "startup.builtin_tool_register_failed",
+                tool=builtin_tool_cls.__name__,
+                error=str(exc),
+            )
+    capability_registry = CapabilityRegistry(tool_registry)
+    app.state.tool_registry = tool_registry
+    app.state.capability_registry = capability_registry
+    logger.info(
+        "startup.tool_registry_initialised",
+        count=tool_registry.count,
+    )
+
+    # Set up ProviderService.
+    from app.services.provider_service import ProviderService
+
+    provider_service = ProviderService(
+        repository=ProviderRepository.__new__(ProviderRepository),
+        llm_router=llm_router,
+        settings=settings,
+    )
+
     # Load enabled plugins from the database.
     from app.database.repositories.plugin_repository import PluginRepository
     from app.plugin.manager import PluginManager
@@ -394,7 +432,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             plugin_repo = PluginRepository(db_session)
             plugin_manager = PluginManager(
                 plugin_repository=plugin_repo,
+                capability_registry=capability_registry,
                 app_version=settings.app_version,
+                tool_registry=tool_registry,
+                provider_service=provider_service,
             )
             loaded_count = await plugin_manager.load_enabled()
             if loaded_count:
@@ -449,6 +490,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # ------------------------------------------------------------------ #
     shutdown_start: float = time.monotonic()
     logger.info("shutdown.begin")
+
+    # Unload all plugins.
+    pm = getattr(app.state, "plugin_manager", None)
+    if pm is not None:
+        try:
+            await pm.unload_all()
+        except Exception as exc:
+            logger.warning("shutdown.unload_plugins_failed", error=str(exc))
 
     await _run_shutdown_hooks(container)
     _shutdown_observability()
