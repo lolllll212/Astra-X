@@ -384,6 +384,31 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     app.state.llm_router = llm_router
 
+    # Load enabled plugins from the database.
+    from app.database.repositories.plugin_repository import PluginRepository
+    from app.plugin.manager import PluginManager
+
+    try:
+        session_factory = create_session_factory(engine)
+        async with session_context(session_factory) as db_session:
+            plugin_repo = PluginRepository(db_session)
+            plugin_manager = PluginManager(plugin_repository=plugin_repo)
+            loaded_count = await plugin_manager.load_enabled()
+            if loaded_count:
+                logger.info(
+                    "startup.plugins_loaded",
+                    count=loaded_count,
+                )
+            else:
+                logger.info("startup.no_plugins_found")
+    except Exception as exc:
+        logger.warning("startup.load_plugins_failed", error=str(exc))
+        plugin_manager = PluginManager(
+            plugin_repository=PluginRepository.__new__(PluginRepository),
+        )
+
+    app.state.plugin_manager = plugin_manager
+
     # Initialise observability.
     _init_observability(settings, app)
 

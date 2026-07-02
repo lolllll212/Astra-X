@@ -22,6 +22,7 @@ from app.config.settings import Settings
 from app.database.repositories.attachment_repository import AttachmentRepository
 from app.database.repositories.conversation_repository import ConversationRepository
 from app.database.repositories.message_repository import MessageRepository
+from app.database.repositories.plugin_repository import PluginRepository
 from app.database.repositories.provider_repository import ProviderRepository
 from app.database.repositories.usage_repository import UsageRepository
 from app.database.session import create_session_factory, session_context
@@ -30,6 +31,7 @@ from app.services.attachment_service import AttachmentService
 from app.services.chat_service import ChatService
 from app.services.conversation_service import ConversationService
 from app.services.memory_service import MemoryService
+from app.services.plugin_service import PluginService
 from app.services.provider_service import ProviderService
 from app.services.usage_service import UsageService
 
@@ -173,6 +175,20 @@ async def get_usage_service(
 ) -> UsageService:
     """Provide a usage tracking service."""
     return UsageService(repository)
+
+
+async def get_plugin_repository(
+    session: AsyncSession = Depends(get_db_session),
+) -> PluginRepository:
+    """Provide a plugin repository for the current request."""
+    return PluginRepository(session)
+
+
+async def get_plugin_service(
+    repository: PluginRepository = Depends(get_plugin_repository),
+) -> PluginService:
+    """Provide a plugin management service."""
+    return PluginService(repository=repository)
 
 
 async def get_chat_service(

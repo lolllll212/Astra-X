@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any
+from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -63,6 +64,7 @@ class PluginSpec(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     id: str = Field(
+        default_factory=lambda: str(uuid4()),
         description="UUID primary key, auto-generated.",
     )
     name: str = Field(

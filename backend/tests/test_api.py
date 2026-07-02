@@ -30,6 +30,7 @@ from app.api.dependencies import (
     get_conversation_service,
     get_core_memory_manager,
     get_memory_service,
+    get_plugin_service,
     get_provider_repository,
     get_provider_service,
     get_usage_service,
@@ -42,6 +43,12 @@ from app.api.errors import (
     get_uptime,
     _StartupState,
     _startup,
+)
+from app.core.exceptions import (
+    AstraError,
+    ConflictError,
+    ResourceNotFoundError,
+    astra_error_handler,
 )
 from app.api.middleware import (
     RequestIDMiddleware,
@@ -71,6 +78,10 @@ from app.api.routes.conversations import (
 )
 from app.api.routes.health import router as health_router
 from app.api.routes.metrics import router as metrics_router
+from app.api.routes.plugins import (
+    _spec_to_response as _plugin_spec_to_response,
+    router as plugins_router,
+)
 from app.api.routes.providers import (
     _spec_to_response,
     router as providers_router,
@@ -96,6 +107,12 @@ from app.api.schemas.chat import (
 from app.api.schemas.common import PaginationParams, PaginatedResponse, MessageResponse as CommonMessageResponse
 from app.api.schemas.conversation import ConversationCreate, ConversationUpdate, ConversationResponse, ConversationListResponse
 from app.api.schemas.health import HealthResponse
+from app.api.schemas.plugin import (
+    PluginInstallRequest,
+    PluginUpdateRequest,
+    PluginResponse,
+    PluginListResponse,
+)
 from app.api.schemas.provider import (
     ProviderRegisterRequest,
     ProviderUpdateRequest,
@@ -125,6 +142,7 @@ from app.domain.message import (
     ToolResultBlock,
     Message,
 )
+from app.domain.plugin import PluginSpec, PluginStatus
 from app.domain.provider import ProviderSpec
 from app.domain.usage import Usage
 from app.llm.exceptions import (
@@ -142,6 +160,7 @@ from app.services.chat_service import ChatResult, ChatService
 from app.services.conversation_service import ConversationService
 from app.services.attachment_service import AttachmentService
 from app.services.memory_service import MemoryService
+from app.services.plugin_service import PluginService
 from app.services.provider_service import ProviderService
 from app.services.usage_service import UsageService
 
@@ -1371,3 +1390,189 @@ class TestAttachmentsRoute:
         client = TestClient(app)
         resp = client.delete("/attachments/att-1")
         assert resp.status_code == 200
+
+
+class TestPluginHelpers:
+    def test_plugin_spec_to_response(self) -> None:
+        spec = PluginSpec(
+            name="test-plugin",
+            display_name="Test Plugin",
+            version="1.0.0",
+        )
+        result = _plugin_spec_to_response(spec)
+        assert result.id == spec.id
+        assert result.name == "test-plugin"
+        assert result.display_name == "Test Plugin"
+        assert result.version == "1.0.0"
+        assert result.enabled is False
+        assert result.status == PluginStatus.INSTALLED
+
+    def test_plugin_spec_to_response_minimal(self) -> None:
+        spec = PluginSpec(name="minimal")
+        result = _plugin_spec_to_response(spec)
+        assert result.name == "minimal"
+        assert result.display_name == ""
+        assert result.homepage is None
+
+
+class TestPluginRoute:
+    def test_list_plugins_empty(self) -> None:
+        app = FastAPI()
+        app.include_router(plugins_router)
+        app.add_exception_handler(AstraError, astra_error_handler)
+
+        mock_service = MagicMock(spec=PluginService)
+        mock_service.list_installed = AsyncMock(return_value=[])
+        app.dependency_overrides[get_plugin_service] = lambda: mock_service
+
+        client = TestClient(app)
+        resp = client.get("/plugins")
+        assert resp.status_code == 200
+        assert resp.json() == {"plugins": []}
+
+    def test_list_plugins(self) -> None:
+        app = FastAPI()
+        app.include_router(plugins_router)
+        app.add_exception_handler(AstraError, astra_error_handler)
+
+        spec = PluginSpec(name="test-plugin", display_name="Test Plugin")
+        mock_service = MagicMock(spec=PluginService)
+        mock_service.list_installed = AsyncMock(return_value=[spec])
+        app.dependency_overrides[get_plugin_service] = lambda: mock_service
+
+        client = TestClient(app)
+        resp = client.get("/plugins")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["plugins"]) == 1
+        assert data["plugins"][0]["name"] == "test-plugin"
+
+    def test_install_plugin(self) -> None:
+        app = FastAPI()
+        app.include_router(plugins_router)
+        app.add_exception_handler(AstraError, astra_error_handler)
+
+        spec = PluginSpec(name="new-plugin", display_name="New Plugin")
+        mock_service = MagicMock(spec=PluginService)
+        mock_service.install = AsyncMock(return_value=spec)
+        app.dependency_overrides[get_plugin_service] = lambda: mock_service
+
+        client = TestClient(app)
+        resp = client.post(
+            "/plugins",
+            json={"name": "new-plugin", "display_name": "New Plugin"},
+        )
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["name"] == "new-plugin"
+        assert data["display_name"] == "New Plugin"
+
+    def test_install_plugin_duplicate(self) -> None:
+        app = FastAPI()
+        app.include_router(plugins_router)
+        app.add_exception_handler(AstraError, astra_error_handler)
+
+        mock_service = MagicMock(spec=PluginService)
+        mock_service.install = AsyncMock(
+            side_effect=ConflictError("Plugin 'dup' already exists."),
+        )
+        app.dependency_overrides[get_plugin_service] = lambda: mock_service
+
+        client = TestClient(app)
+        resp = client.post("/plugins", json={"name": "dup"})
+        assert resp.status_code == 409
+        assert "already exists" in resp.text
+
+    def test_get_plugin(self) -> None:
+        app = FastAPI()
+        app.include_router(plugins_router)
+        app.add_exception_handler(AstraError, astra_error_handler)
+
+        spec = PluginSpec(id="p1", name="get-me", display_name="Get Me")
+        mock_service = MagicMock(spec=PluginService)
+        mock_service.get = AsyncMock(return_value=spec)
+        app.dependency_overrides[get_plugin_service] = lambda: mock_service
+
+        client = TestClient(app)
+        resp = client.get("/plugins/p1")
+        assert resp.status_code == 200
+        assert resp.json()["id"] == "p1"
+        assert resp.json()["name"] == "get-me"
+
+    def test_get_plugin_not_found(self) -> None:
+        app = FastAPI()
+        app.include_router(plugins_router)
+        app.add_exception_handler(AstraError, astra_error_handler)
+
+        mock_service = MagicMock(spec=PluginService)
+        mock_service.get = AsyncMock(
+            side_effect=ResourceNotFoundError("Plugin 'bad' not found."),
+        )
+        app.dependency_overrides[get_plugin_service] = lambda: mock_service
+
+        client = TestClient(app)
+        resp = client.get("/plugins/bad-id")
+        assert resp.status_code == 404
+
+    def test_update_plugin(self) -> None:
+        app = FastAPI()
+        app.include_router(plugins_router)
+        app.add_exception_handler(AstraError, astra_error_handler)
+
+        spec = PluginSpec(id="p1", name="update-me", display_name="Updated", version="2.0.0")
+        mock_service = MagicMock(spec=PluginService)
+        mock_service.update = AsyncMock(return_value=spec)
+        app.dependency_overrides[get_plugin_service] = lambda: mock_service
+
+        client = TestClient(app)
+        resp = client.patch(
+            "/plugins/p1",
+            json={"display_name": "Updated", "version": "2.0.0"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["display_name"] == "Updated"
+        assert data["version"] == "2.0.0"
+
+    def test_update_plugin_not_found(self) -> None:
+        app = FastAPI()
+        app.include_router(plugins_router)
+        app.add_exception_handler(AstraError, astra_error_handler)
+
+        mock_service = MagicMock(spec=PluginService)
+        mock_service.update = AsyncMock(
+            side_effect=ResourceNotFoundError("Plugin 'bad' not found."),
+        )
+        app.dependency_overrides[get_plugin_service] = lambda: mock_service
+
+        client = TestClient(app)
+        resp = client.patch("/plugins/bad-id", json={"display_name": "Nope"})
+        assert resp.status_code == 404
+
+    def test_uninstall_plugin(self) -> None:
+        app = FastAPI()
+        app.include_router(plugins_router)
+        app.add_exception_handler(AstraError, astra_error_handler)
+
+        mock_service = MagicMock(spec=PluginService)
+        mock_service.uninstall = AsyncMock(return_value=None)
+        app.dependency_overrides[get_plugin_service] = lambda: mock_service
+
+        client = TestClient(app)
+        resp = client.delete("/plugins/p1")
+        assert resp.status_code == 204
+
+    def test_uninstall_plugin_not_found(self) -> None:
+        app = FastAPI()
+        app.include_router(plugins_router)
+        app.add_exception_handler(AstraError, astra_error_handler)
+
+        mock_service = MagicMock(spec=PluginService)
+        mock_service.uninstall = AsyncMock(
+            side_effect=ResourceNotFoundError("Plugin 'bad' not found."),
+        )
+        app.dependency_overrides[get_plugin_service] = lambda: mock_service
+
+        client = TestClient(app)
+        resp = client.delete("/plugins/bad-id")
+        assert resp.status_code == 404

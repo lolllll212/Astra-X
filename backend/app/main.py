@@ -40,6 +40,7 @@ from app.api.routes import (
     conversations_router,
     health_router,
     metrics_router,
+    plugins_router,
     providers_router,
     system_router,
 )
@@ -155,6 +156,7 @@ app.include_router(health_router, prefix=settings.api_v1_prefix)
 app.include_router(chat_router, prefix=settings.api_v1_prefix)
 app.include_router(conversations_router, prefix=settings.api_v1_prefix)
 app.include_router(providers_router, prefix=settings.api_v1_prefix)
+app.include_router(plugins_router, prefix=settings.api_v1_prefix)
 app.include_router(attachments_router, prefix=settings.api_v1_prefix)
 app.include_router(metrics_router, prefix=settings.api_v1_prefix)
 app.include_router(system_router, prefix=settings.api_v1_prefix)
