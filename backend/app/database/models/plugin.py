@@ -53,6 +53,9 @@ class PluginModel(Base):
     install_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="installed")
     status_message: Mapped[str] = mapped_column(Text, default="")
+    capabilities: Mapped[list[str]] = mapped_column(JSON, default=list)
+    minimum_core_version: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    maximum_core_version: Mapped[str | None] = mapped_column(String(30), nullable=True)
     checksum: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC),

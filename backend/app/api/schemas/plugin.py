@@ -74,6 +74,20 @@ class PluginInstallRequest(BaseModel):
         default="community",
         description="Operator-assigned trust tier.",
     )
+    capabilities: list[str] = Field(
+        default_factory=list,
+        description="Capability identifiers this plugin provides.",
+    )
+    minimum_core_version: str | None = Field(
+        default=None,
+        max_length=30,
+        description="Earliest app version this plugin is compatible with.",
+    )
+    maximum_core_version: str | None = Field(
+        default=None,
+        max_length=30,
+        description="Latest app version this plugin is compatible with.",
+    )
 
 
 class PluginUpdateRequest(BaseModel):
@@ -114,6 +128,20 @@ class PluginUpdateRequest(BaseModel):
         default=None,
         description="New operator-assigned trust tier.",
     )
+    capabilities: list[str] | None = Field(
+        default=None,
+        description="New capability identifiers.",
+    )
+    minimum_core_version: str | None = Field(
+        default=None,
+        max_length=30,
+        description="New minimum core version constraint.",
+    )
+    maximum_core_version: str | None = Field(
+        default=None,
+        max_length=30,
+        description="New maximum core version constraint.",
+    )
 
 
 class PluginResponse(BaseModel):
@@ -138,6 +166,9 @@ class PluginResponse(BaseModel):
     install_path: str | None = Field(default=None, description="Filesystem path to plugin root.")
     status: str = Field(description="High-level lifecycle state.")
     status_message: str = Field(default="", description="Status description or error message.")
+    capabilities: list[str] = Field(default_factory=list, description="Capability identifiers this plugin provides.")
+    minimum_core_version: str | None = Field(default=None, description="Minimum compatible app version.")
+    maximum_core_version: str | None = Field(default=None, description="Maximum compatible app version.")
     checksum: str | None = Field(default=None, description="SHA-256 of plugin manifest.")
     created_at: datetime | None = Field(default=None, description="Registration timestamp.")
     updated_at: datetime | None = Field(default=None, description="Last modification timestamp.")

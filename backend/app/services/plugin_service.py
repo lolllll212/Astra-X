@@ -34,6 +34,9 @@ class PluginService:
         install_path: str | None = None,
         enabled: bool = False,
         trust_tier: str = "community",
+        capabilities: list[str] | None = None,
+        minimum_core_version: str | None = None,
+        maximum_core_version: str | None = None,
     ) -> PluginSpec:
         """Register a new plugin in the database.
 
@@ -50,6 +53,9 @@ class PluginService:
             install_path: Filesystem path to plugin root.
             enabled: Whether the plugin is active at runtime.
             trust_tier: Operator-assigned trust level.
+            capabilities: Capability identifiers this plugin provides.
+            minimum_core_version: Earliest app version this plugin is compatible with.
+            maximum_core_version: Latest app version this plugin is compatible with.
 
         Returns:
             The newly created plugin spec.
@@ -78,6 +84,9 @@ class PluginService:
             install_path=install_path,
             enabled=enabled,
             trust_tier=trust_tier,
+            capabilities=capabilities or [],
+            minimum_core_version=minimum_core_version,
+            maximum_core_version=maximum_core_version,
         )
         result = await self._repo.add(spec)
 
@@ -168,6 +177,9 @@ class PluginService:
         status: str | None = None,
         status_message: str | None = None,
         trust_tier: str | None = None,
+        capabilities: list[str] | None = None,
+        minimum_core_version: str | None = None,
+        maximum_core_version: str | None = None,
     ) -> PluginSpec:
         """Update selected fields of an existing plugin.
 
@@ -182,6 +194,9 @@ class PluginService:
             status: New lifecycle status.
             status_message: New status message.
             trust_tier: New trust tier.
+            capabilities: New capability identifiers.
+            minimum_core_version: New minimum core version constraint.
+            maximum_core_version: New maximum core version constraint.
 
         Returns:
             The updated plugin spec.
@@ -210,6 +225,12 @@ class PluginService:
             update_kwargs["status_message"] = status_message
         if trust_tier is not None:
             update_kwargs["trust_tier"] = trust_tier
+        if capabilities is not None:
+            update_kwargs["capabilities"] = capabilities
+        if minimum_core_version is not None:
+            update_kwargs["minimum_core_version"] = minimum_core_version
+        if maximum_core_version is not None:
+            update_kwargs["maximum_core_version"] = maximum_core_version
 
         updated = spec.model_copy(update=update_kwargs)
         result = await self._repo.update(updated)

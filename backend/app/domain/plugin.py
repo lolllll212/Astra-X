@@ -131,6 +131,18 @@ class PluginSpec(BaseModel):
         default="",
         description="Last error message or human-readable status description.",
     )
+    capabilities: list[str] = Field(
+        default_factory=list,
+        description="Capability identifiers this plugin provides, e.g. 'search_web'.",
+    )
+    minimum_core_version: str | None = Field(
+        default=None,
+        description="Earliest app version this plugin is compatible with (inclusive).",
+    )
+    maximum_core_version: str | None = Field(
+        default=None,
+        description="Latest app version this plugin is compatible with (inclusive).",
+    )
     checksum: str | None = Field(
         default=None,
         description="SHA-256 of the plugin manifest for integrity verification.",

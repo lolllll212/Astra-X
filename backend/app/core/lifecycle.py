@@ -392,7 +392,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         session_factory = create_session_factory(engine)
         async with session_context(session_factory) as db_session:
             plugin_repo = PluginRepository(db_session)
-            plugin_manager = PluginManager(plugin_repository=plugin_repo)
+            plugin_manager = PluginManager(
+                plugin_repository=plugin_repo,
+                app_version=settings.app_version,
+            )
             loaded_count = await plugin_manager.load_enabled()
             if loaded_count:
                 logger.info(
@@ -405,6 +408,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.warning("startup.load_plugins_failed", error=str(exc))
         plugin_manager = PluginManager(
             plugin_repository=PluginRepository.__new__(PluginRepository),
+            app_version=settings.app_version,
         )
 
     app.state.plugin_manager = plugin_manager

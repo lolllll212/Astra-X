@@ -41,6 +41,9 @@ def _spec_to_response(spec: PluginSpec) -> PluginResponse:
         entry_point=spec.entry_point,
         manifest_path=spec.manifest_path,
         install_path=spec.install_path,
+        capabilities=spec.capabilities,
+        minimum_core_version=spec.minimum_core_version,
+        maximum_core_version=spec.maximum_core_version,
         status=spec.status,
         status_message=spec.status_message,
         checksum=spec.checksum,
@@ -90,6 +93,9 @@ async def install_plugin(
         install_path=body.install_path,
         enabled=body.enabled,
         trust_tier=body.trust_tier,
+        capabilities=body.capabilities,
+        minimum_core_version=body.minimum_core_version,
+        maximum_core_version=body.maximum_core_version,
     )
     return _spec_to_response(spec)
 
@@ -134,6 +140,9 @@ async def update_plugin(
         status=body.status,
         status_message=body.status_message,
         trust_tier=body.trust_tier,
+        capabilities=body.capabilities,
+        minimum_core_version=body.minimum_core_version,
+        maximum_core_version=body.maximum_core_version,
     )
     return _spec_to_response(spec)
 
