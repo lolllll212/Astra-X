@@ -388,7 +388,7 @@ class TestChatCoordinatorAgentPipeline:
         ):
             pass
 
-        planner.plan.assert_awaited_once_with(goal="go", memory_context="")
+        planner.plan.assert_awaited_once_with(goal="go", memory_context="", patterns_context="")
 
     @pytest.mark.asyncio
     async def test_run_agent_pipeline_stores_memory_after_execution(self) -> None:
