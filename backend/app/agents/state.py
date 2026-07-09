@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from app.agents.models.execution import ExecutionResult
+from app.agents.models.execution import ExecutionResult, ReflectionResult
 from app.agents.models.plan import Plan
 from app.agents.models.task import TaskStatus
 
@@ -41,6 +41,7 @@ class AgentState:
     max_iterations: int = 5
 
     completed_results: dict[str, ExecutionResult] = field(default_factory=dict)
+    reflections: dict[str, ReflectionResult] = field(default_factory=dict)
     memory_context: str | None = None
     errors: list[str] = field(default_factory=list)
 

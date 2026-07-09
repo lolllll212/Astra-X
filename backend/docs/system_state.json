@@ -1,14 +1,64 @@
 {
   "schema_version": "1.0",
-  "last_updated": "2026-07-09T21:41:00Z",
+  "last_updated": "2026-07-09T22:00:00Z",
   "mode": "AEE",
   "health_baseline": {
     "ruff": "pass (pre-existing E501 warnings in coordinator.py only)",
     "mypy_strict": "22 errors (8 files) — all pre-existing; our files pass clean",
     "pytest": "990 passed, 14 warnings",
-    "coverage": "79%"
+    "coverage": "78%"
   },
   "active_features": [
+    {
+      "name": "pattern_ranking",
+      "status": "deployed",
+      "description": "Multi-factor ranking (similarity, success_rate, recency, cost, confidence) with configurable weights",
+      "files": [
+        "app/agents/models/pattern.py",
+        "app/agents/learning_store.py",
+        "app/agents/learning_manager.py",
+        "app/database/models/execution_pattern.py",
+        "app/database/converters/pattern_mapper.py",
+        "tests/test_learning_patterns.py"
+      ]
+    },
+    {
+      "name": "plan_simulation",
+      "status": "deployed",
+      "description": "Heuristic cost/success estimation before execution, integrated into Coordinator",
+      "files": [
+        "app/agents/plan_simulator.py",
+        "app/agents/coordinator.py"
+      ]
+    },
+    {
+      "name": "learning_feedback_closed_loop",
+      "status": "deployed",
+      "description": "Strategy improvement + plan merging between reflection and pattern storage",
+      "files": [
+        "app/agents/learning_manager.py",
+        "app/agents/state.py",
+        "app/agents/coordinator.py"
+      ]
+    },
+    {
+      "name": "memory_hierarchy_bridge",
+      "status": "deployed",
+      "description": "Patterns bridged into core memory as PROCEDURAL memories (working/episodic/semantic/procedural)",
+      "files": [
+        "app/agents/learning_manager.py"
+      ]
+    },
+    {
+      "name": "adaptive_provider_selection",
+      "status": "deployed",
+      "description": "ProviderMetricsTracker collects latency/tokens/success/confidence; ModelSelector blends capability profile with historical performance",
+      "files": [
+        "app/llm/provider_metrics.py",
+        "app/llm/model_selector.py",
+        "app/agents/coordinator.py"
+      ]
+    },
     {
       "name": "protocol_aware_transport",
       "status": "deployed",
@@ -42,8 +92,7 @@
       "id": 1,
       "task": "Fix pre-existing mypy strict errors (22 across 8 files)",
       "priority": "medium",
-      "deferred": true,
-      "note": "Mostly opentelemetry stub issues and legacy type violations"
+      "deferred": true
     },
     {
       "id": 2,

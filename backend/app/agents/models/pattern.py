@@ -65,6 +65,17 @@ class ExecutionPattern(BaseModel):
         le=1.0,
         description="Average feedback importance across all uses.",
     )
+    avg_execution_cost_ms: float = Field(
+        default=0.0,
+        ge=0.0,
+        description="Average execution cost in milliseconds across all uses.",
+    )
+    last_reflection_confidence: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+        description="Reflection confidence from the most recent application.",
+    )
     last_success_at: datetime | None = Field(
         default=None,
         description="When this pattern was last successfully applied.",

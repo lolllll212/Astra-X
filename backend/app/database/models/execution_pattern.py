@@ -21,6 +21,8 @@ class ExecutionPatternModel(Base):
     total_count: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     avg_confidence: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
     avg_importance: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    avg_execution_cost_ms: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    last_reflection_confidence: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
     last_success_at: Mapped[datetime | None] = mapped_column(DateTime(True), nullable=True)
     created_at: Mapped[datetime | None] = mapped_column(
         DateTime(True), default=func.now(), nullable=True

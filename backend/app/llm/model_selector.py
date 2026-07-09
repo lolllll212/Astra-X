@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING
 from app.core.logging import get_logger
 
 if TYPE_CHECKING:
+    from app.llm.provider_metrics import ProviderMetricsTracker
     from app.llm.router import LLMRouter
 
 logger = get_logger(__name__)
@@ -109,6 +110,8 @@ class ModelSelector:
         model_profiles: dict[str, dict[str, object]] | None = None,
         default_model: str = "llama3.1",
         default_provider: str | None = None,
+        metrics_tracker: ProviderMetricsTracker | None = None,
+        performance_weight: float = 0.20,
     ) -> None:
         self._router = router
         self._model_profiles: dict[str, ModelProfile] = self._build_profiles(
@@ -116,6 +119,9 @@ class ModelSelector:
         )
         self._default_model = default_model
         self._default_provider = default_provider
+        self._metrics_tracker = metrics_tracker
+        # How much to weigh historical performance vs capability profile.
+        self._performance_weight = performance_weight
 
     @classmethod
     def from_router(
@@ -123,6 +129,7 @@ class ModelSelector:
         router: LLMRouter,
         default_model: str = "llama3.1",
         default_provider: str | None = None,
+        metrics_tracker: ProviderMetricsTracker | None = None,
     ) -> ModelSelector:
         """Create a selector linked to a router with default model profiles.
 
@@ -130,6 +137,7 @@ class ModelSelector:
             router: The LLM router to query for registered providers.
             default_model: Fallback model when no provider matches.
             default_provider: Fallback provider when no match is found.
+            metrics_tracker: Optional performance tracker for data-driven scoring.
 
         Returns:
             A new ModelSelector instance.
@@ -139,6 +147,7 @@ class ModelSelector:
             model_profiles=None,
             default_model=default_model,
             default_provider=default_provider,
+            metrics_tracker=metrics_tracker,
         )
 
     # ------------------------------------------------------------------
@@ -226,7 +235,7 @@ class ModelSelector:
 
             if self._router.is_provider_available(pid):
                 mp = self._model_profiles.get(mid)
-                score = self._score(profile, mp, mid)
+                score = self._score(profile, mp, mid, provider_id=pid)
                 scored.append((score, mid, pid))
                 seen_models.add(mid)
 
@@ -235,18 +244,23 @@ class ModelSelector:
 
         return [(mid, pid) for _, mid, pid in scored]
 
-    @staticmethod
     def _score(
+        self,
         profile: CapabilityProfile,
         mp: ModelProfile | None,
         model_id: str,
+        provider_id: str | None = None,
     ) -> float:
         """Score a single model/profile combination.
+
+        Blends capability-profile matching with historical performance data
+        when a :class:`ProviderMetricsTracker` is available.
 
         Args:
             profile: What the task needs.
             mp: The model's profile (``None`` if unknown).
             model_id: The model identifier (used for fallback scoring).
+            provider_id: The provider serving this model (for performance lookup).
 
         Returns:
             A score where higher is better. Returns ``-float("inf")``
@@ -283,6 +297,22 @@ class ModelSelector:
         # Balanced models get a small baseline for general tasks.
         if "balanced" in strengths:
             score += 0.5
+
+        # --- Data-driven bonus from historical performance ---
+        if self._metrics_tracker is not None and provider_id is not None:
+            stats = self._metrics_tracker.get_stats(provider_id, model_id)
+            if stats is not None and stats.total_calls >= 3:
+                perf_score = 0.0
+                perf_score += stats.success_rate * 2.0  # up to +2.0
+                if profile.prefers_speed:
+                    # Bonus for low latency: 1.0 at 500ms → 0.0 at 10s+.
+                    latency_bonus = max(0.0, 1.0 - stats.avg_latency_ms / 10000.0)
+                    perf_score += latency_bonus * 1.5
+                if profile.reasoning in ("medium", "deep"):
+                    perf_score += stats.avg_reflection_confidence * 1.0
+                # Blend: (1 - w) * capability_score + w * performance_score.
+                w = self._performance_weight
+                score = score * (1.0 - w) + perf_score * w
 
         return score
 

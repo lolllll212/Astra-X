@@ -31,6 +31,7 @@ from app.agents.memory_manager import MemoryManager
 from app.agents.models.execution import ReflectionDecision, ReflectionResult
 from app.agents.models.plan import Plan
 from app.agents.models.task import Task, TaskStatus
+from app.agents.plan_simulator import PlanSimulator
 from app.agents.planner import Planner
 from app.agents.reflection import Reflection
 from app.agents.state import AgentState
@@ -40,6 +41,7 @@ from app.core.tracing import get_tracer
 from app.domain.enums import MessageRole
 from app.domain.message import Message, TextBlock
 from app.llm.models import CompletionRequest, CompletionResponse, GenerationParams
+from app.llm.provider_metrics import ProviderMetricsTracker
 from app.llm.router import LLMRouter
 from app.observability import (
     memory_retrieval_duration,
@@ -107,6 +109,8 @@ class Coordinator:
         capability_registry: CapabilityRegistry | None = None,
         model_selector: ModelSelector | None = None,
         learning_manager: LearningManager | None = None,
+        plan_simulator: PlanSimulator | None = None,
+        metrics_tracker: ProviderMetricsTracker | None = None,
         config: AgentConfig | None = None,
     ) -> None:
         self._planner = planner
@@ -117,6 +121,8 @@ class Coordinator:
         self._capability_registry = capability_registry
         self._model_selector = model_selector
         self._learning_manager = learning_manager
+        self._plan_simulator = plan_simulator
+        self._metrics_tracker = metrics_tracker
         self._config = config or AgentConfig()
 
     async def run(
@@ -176,6 +182,18 @@ class Coordinator:
                 state.plan = plan
                 graph = self._build_graph(plan)
 
+                # Step 1b — Simulate the plan (heuristic cost/success estimate).
+                if self._plan_simulator is not None:
+                    with tracer.span("Plan Simulation", category="agent"):
+                        sim = await self._plan_simulator.simulate(goal, plan)
+                    logger.info(
+                        "coordinator.simulation",
+                        total_cost_s=round(sim.total_estimated_cost_ms / 1000, 1),
+                        success_rate=round(sim.overall_success_probability, 2),
+                        confidence=round(sim.confidence, 2),
+                        notes=sim.notes,
+                    )
+
                 # Step 2 — Execute tasks.
                 while not graph.is_complete():
                     ready_tasks = graph.get_ready()
@@ -205,9 +223,25 @@ class Coordinator:
                         # Step 3 — Reflect (before storing so assessment is available).
                         with tracer.span("Reflection", category="agent"):
                             assessment = await self._reflection.reflect(result)
+                        state.reflections[task.id] = assessment
                         reflection_outcomes_total.labels(
                             decision=assessment.decision.value,
                         ).inc()
+
+                        # Record provider metrics for data-driven model selection.
+                        if self._metrics_tracker is not None:
+                            latency_ms = (
+                                (result.completed_at - result.started_at).total_seconds() * 1000.0
+                                if result.completed_at and result.started_at
+                                else 0.0
+                            )
+                            self._metrics_tracker.record(
+                                provider_id="",
+                                model_id="",
+                                latency_ms=latency_ms,
+                                success=result.status is TaskStatus.COMPLETED,
+                                reflection_confidence=assessment.confidence,
+                            )
 
                         # Store in memory with feedback loop + assessment.
                         _t0 = time.monotonic()
@@ -241,12 +275,13 @@ class Coordinator:
         if self._learning_manager is not None and state.completed_results:
             with tracer.span("Pattern Extraction", category="learning"):
                 results_list = list(state.completed_results.values())
+                reflections_list = list(state.reflections.values())
                 if state.plan is not None:
                     await self._learning_manager.extract_pattern(
                         goal=goal,
                         plan=state.plan,
                         results=results_list,
-                        reflections=[],
+                        reflections=reflections_list,
                     )
 
         # Assemble final answer.
