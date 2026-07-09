@@ -5,7 +5,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
-from app.domain.enums import ModelCapability, ProviderType
+from app.domain.enums import ModelCapability, OpenAIProtocol, ProviderType
 
 __all__ = [
     "ModelID",
@@ -101,9 +101,55 @@ class ProviderSpec(BaseModel):
         default=None,
         description="Encrypted API key for the provider. Never exposed in responses.",
     )
+    protocol: OpenAIProtocol = Field(
+        default=OpenAIProtocol.CHAT_COMPLETIONS,
+        description="Which API protocol this provider speaks.",
+    )
+    api_version_url: str | None = Field(
+        default=None,
+        description="Optional API version suffix (e.g. Azure's ``?api-version=2025-01-01``).",
+    )
     supported_capabilities: frozenset[ModelCapability] = Field(
         default_factory=lambda: frozenset({ModelCapability.CHAT}),
         description="Set of capabilities every model on this provider supports.",
+    )
+    supports_responses_api: bool = Field(
+        default=False,
+        description="Provider can use the Responses API protocol.",
+    )
+    supports_tool_calling: bool = Field(
+        default=True,
+        description="Provider supports function/tool calling.",
+    )
+    supports_vision: bool = Field(
+        default=False,
+        description="Provider supports image inputs.",
+    )
+    supports_streaming: bool = Field(
+        default=True,
+        description="Provider supports streaming responses.",
+    )
+    supports_function_calling: bool = Field(
+        default=True,
+        description="Provider supports function calling (legacy API).",
+    )
+    supports_structured_output: bool = Field(
+        default=False,
+        description="Provider supports structured / JSON output mode.",
+    )
+    supports_parallel_tool_calls: bool = Field(
+        default=True,
+        description="Provider supports multiple parallel tool calls per request.",
+    )
+    supports_system_messages: bool = Field(
+        default=True,
+        description="Provider supports system-level messages.",
+    )
+    max_tool_calls_per_request: int = Field(
+        default=10,
+        ge=1,
+        le=100,
+        description="Maximum number of tool calls the provider allows in a single request.",
     )
     models: list[str] = Field(
         default_factory=list,

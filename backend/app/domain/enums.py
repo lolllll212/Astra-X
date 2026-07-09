@@ -25,6 +25,19 @@ class ProviderType(StrEnum):
     GOOGLE = "google"
 
 
+class OpenAIProtocol(StrEnum):
+    """Protocol variants supported by OpenAI-compatible providers.
+
+    ``CHAT_COMPLETIONS`` targets ``/chat/completions`` (the legacy
+    endpoint).  ``RESPONSES`` targets ``/responses`` (the newer Responses
+    API).  ``COMPATIBLE`` is a legacy alias for ``CHAT_COMPLETIONS``.
+    """
+
+    CHAT_COMPLETIONS = "chat_completions"
+    RESPONSES = "responses"
+    COMPATIBLE = "compatible"
+
+
 class ModelCapability(StrEnum):
     """Capabilities a model may advertise.
 
@@ -39,6 +52,7 @@ class ModelCapability(StrEnum):
     FUNCTION_CALLING = "function_calling"
     STREAMING = "streaming"
     JSON_MODE = "json_mode"
+    RESPONSES_API = "responses_api"
 
 
 class MessageRole(StrEnum):

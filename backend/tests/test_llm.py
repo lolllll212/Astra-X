@@ -53,7 +53,8 @@ from app.llm.models import (
     FinishReason,
     GenerationParams,
 )
-from app.llm.providers.lmstudio import LMStudioProvider, _domain_to_openai_messages, _parse_finish_reason
+from app.llm.providers.adapters.chat_completions import domain_to_openai_messages as _domain_to_openai_messages, parse_finish_reason as _parse_finish_reason
+from app.llm.providers.lmstudio import LMStudioProvider
 from app.llm.providers.ollama import OllamaProvider, _domain_to_ollama_messages
 from app.llm.providers.openai_compatible import OpenAICompatibleProvider
 from app.llm.registry import ProviderRegistry
@@ -671,7 +672,7 @@ class TestLMStudioProvider:
             "data: [DONE]",
         ]
         mock_client = _mock_stream_response(lines)
-        with patch.object(provider, "_client", mock_client):
+        with patch.object(provider._transport, "_client", mock_client):
             resp = await provider.generate(_make_request())
         assert "Hello World" in str(resp.message.content[0].text)
         assert resp.usage is not None
@@ -695,7 +696,7 @@ class TestLMStudioProvider:
             "data: [DONE]",
         ]
         mock_client = _mock_stream_response(lines)
-        with patch.object(provider, "_client", mock_client):
+        with patch.object(provider._transport, "_client", mock_client):
             events: list[Any] = []
             async for event in provider.generate_stream(_make_request()):
                 events.append(event)
@@ -712,7 +713,7 @@ class TestLMStudioProvider:
             "data: [DONE]",
         ]
         mock_client = _mock_stream_response(lines)
-        with patch.object(provider, "_client", mock_client):
+        with patch.object(provider._transport, "_client", mock_client):
             events: list[Any] = []
             async for event in provider.generate_stream(_make_request()):
                 events.append(event)
@@ -720,27 +721,27 @@ class TestLMStudioProvider:
 
     @pytest.mark.asyncio
     async def test_health_ok(self, provider: LMStudioProvider) -> None:
-        mock_client = AsyncMock()
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-        mock_client.get = AsyncMock()
-        mock_client.get.return_value.status_code = 200
+        mock_client = MagicMock()
+        mock_client.request = AsyncMock()
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_client.request.return_value = mock_response
 
-        with patch.object(provider, "_client", mock_client):
+        with patch.object(provider._transport, "_client", mock_client):
             assert await provider.check_health() is True
 
     @pytest.mark.asyncio
     async def test_list_models(self, provider: LMStudioProvider) -> None:
-        mock_client = AsyncMock()
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-        mock_client.get = AsyncMock()
-        mock_client.get.return_value.status_code = 200
-        mock_client.get.return_value.json = MagicMock(return_value={
+        mock_client = MagicMock()
+        mock_client.request = AsyncMock()
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json = MagicMock(return_value={
             "data": [{"id": "model1"}, {"id": "model2"}],
         })
+        mock_client.request.return_value = mock_response
 
-        with patch.object(provider, "_client", mock_client):
+        with patch.object(provider._transport, "_client", mock_client):
             models = await provider.list_models()
         assert "model1" in models
         assert "model2" in models
@@ -755,7 +756,7 @@ class TestLMStudioProvider:
             side_effect=__import__("httpx").TimeoutException("timed out"),
         )
 
-        with patch.object(provider, "_client", mock_client):
+        with patch.object(provider._transport, "_client", mock_client):
             with pytest.raises(ProviderTimeoutError, match="LM Studio stream timed out"):
                 async for _ in provider.generate_stream(_make_request()):
                     pass
@@ -774,7 +775,7 @@ class TestLMStudioProvider:
             ),
         )
 
-        with patch.object(provider, "_client", mock_client):
+        with patch.object(provider._transport, "_client", mock_client):
             events: list[Any] = []
             async for event in provider.generate_stream(_make_request()):
                 events.append(event)
@@ -784,7 +785,7 @@ class TestLMStudioProvider:
     async def test_close(self, provider: LMStudioProvider) -> None:
         mock_client = AsyncMock()
         mock_client.aclose = AsyncMock()
-        with patch.object(provider, "_client", mock_client):
+        with patch.object(provider._transport, "_client", mock_client):
             await provider.close()
         mock_client.aclose.assert_awaited_once()
 
@@ -819,7 +820,7 @@ class TestOpenAICompatibleProvider:
             "data: [DONE]",
         ]
         mock_client = _mock_stream_response(lines)
-        with patch.object(provider, "_client", mock_client):
+        with patch.object(provider._transport, "_client", mock_client):
             resp = await provider.generate(_make_request())
         assert resp.message is not None
         assert resp.usage is not None
@@ -837,7 +838,7 @@ class TestOpenAICompatibleProvider:
             "data: [DONE]",
         ]
         mock_client = _mock_stream_response(lines)
-        with patch.object(provider, "_client", mock_client):
+        with patch.object(provider._transport, "_client", mock_client):
             events: list[Any] = []
             async for event in provider.generate_stream(_make_request()):
                 events.append(event)
@@ -854,27 +855,27 @@ class TestOpenAICompatibleProvider:
 
     @pytest.mark.asyncio
     async def test_health_ok(self, provider: OpenAICompatibleProvider) -> None:
-        mock_client = AsyncMock()
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-        mock_client.get = AsyncMock()
-        mock_client.get.return_value.status_code = 200
+        mock_client = MagicMock()
+        mock_client.request = AsyncMock()
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_client.request.return_value = mock_response
 
-        with patch.object(provider, "_client", mock_client):
+        with patch.object(provider._transport, "_client", mock_client):
             assert await provider.check_health() is True
 
     @pytest.mark.asyncio
     async def test_list_models(self, provider: OpenAICompatibleProvider) -> None:
-        mock_client = AsyncMock()
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-        mock_client.get = AsyncMock()
-        mock_client.get.return_value.status_code = 200
-        mock_client.get.return_value.json = MagicMock(return_value={
+        mock_client = MagicMock()
+        mock_client.request = AsyncMock()
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json = MagicMock(return_value={
             "data": [{"id": "gpt-4"}, {"id": "gpt-3.5"}],
         })
+        mock_client.request.return_value = mock_response
 
-        with patch.object(provider, "_client", mock_client):
+        with patch.object(provider._transport, "_client", mock_client):
             models = await provider.list_models()
         assert "gpt-4" in models
 
@@ -888,7 +889,7 @@ class TestOpenAICompatibleProvider:
             side_effect=__import__("httpx").TimeoutException("timed out"),
         )
 
-        with patch.object(provider, "_client", mock_client):
+        with patch.object(provider._transport, "_client", mock_client):
             with pytest.raises(ProviderTimeoutError, match="Provider stream timed out"):
                 async for _ in provider.generate_stream(_make_request()):
                     pass
@@ -903,7 +904,7 @@ class TestOpenAICompatibleProvider:
             side_effect=__import__("httpx").ConnectError("connection refused"),
         )
 
-        with patch.object(provider, "_client", mock_client):
+        with patch.object(provider._transport, "_client", mock_client):
             with pytest.raises(ProviderConnectionError, match="Could not connect to"):
                 async for _ in provider.generate_stream(_make_request()):
                     pass
@@ -912,7 +913,7 @@ class TestOpenAICompatibleProvider:
     async def test_close(self, provider: OpenAICompatibleProvider) -> None:
         mock_client = AsyncMock()
         mock_client.aclose = AsyncMock()
-        with patch.object(provider, "_client", mock_client):
+        with patch.object(provider._transport, "_client", mock_client):
             await provider.close()
         mock_client.aclose.assert_awaited_once()
 

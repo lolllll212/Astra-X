@@ -8,7 +8,7 @@ correct adapter class and wiring configuration from the spec.
 from __future__ import annotations
 
 from app.config.settings import Settings
-from app.domain.enums import ProviderType
+from app.domain.enums import ModelCapability, OpenAIProtocol, ProviderType
 from app.domain.provider import ProviderSpec
 from app.llm.base import LLMProvider
 from app.llm.providers.lmstudio import LMStudioProvider
@@ -85,15 +85,33 @@ def create_provider_adapter(
         )
 
     if spec.provider_type == ProviderType.OPENAI_COMPATIBLE:
+        protocol = _resolve_protocol(spec)
         return OpenAICompatibleProvider(
             base_url=base_url or "https://api.openai.com/v1",
             api_key=api_key_str,
             model=spec.models[0] if spec.models else "gpt-4o",
             timeout_seconds=timeout,
             provider_id=provider_id,
+            protocol=protocol,
         )
 
     raise ValueError(
         f"Unknown provider type: {spec.provider_type!r}. "
         f"Supported types: {[t.value for t in ProviderType]}",
     )
+
+
+def _resolve_protocol(spec: ProviderSpec) -> OpenAIProtocol:
+    """Resolve the protocol to use for a provider spec.
+
+    Uses ``spec.protocol`` directly if set explicitly. Falls back to
+    ``RESPONSES`` if the spec advertises ``supports_responses_api``,
+    otherwise defaults to ``CHAT_COMPLETIONS``.
+    """
+    if spec.protocol != OpenAIProtocol.CHAT_COMPLETIONS:
+        return spec.protocol
+    if spec.supports_responses_api:
+        return OpenAIProtocol.RESPONSES
+    if ModelCapability.RESPONSES_API in spec.supported_capabilities:
+        return OpenAIProtocol.RESPONSES
+    return OpenAIProtocol.CHAT_COMPLETIONS

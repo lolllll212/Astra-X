@@ -10,7 +10,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 
-from app.domain.enums import ModelCapability
+from app.domain.enums import ModelCapability, OpenAIProtocol
 from app.domain.stream import StreamEvent
 from app.llm.models import CompletionRequest, CompletionResponse
 
@@ -25,6 +25,15 @@ class LLMProvider(ABC):
 
     provider_id: str
     model_id: str
+
+    @property
+    def protocol(self) -> OpenAIProtocol:
+        """Which protocol this provider speaks.
+
+        Subclasses may override to return the correct protocol for their
+        backend.  Defaults to :attr:`OpenAIProtocol.CHAT_COMPLETIONS`.
+        """
+        return OpenAIProtocol.CHAT_COMPLETIONS
 
     @abstractmethod
     async def generate(
