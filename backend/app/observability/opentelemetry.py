@@ -30,7 +30,7 @@ _Resource: type | None = None
 _ResourceAttributes: Any = None
 
 try:
-    from opentelemetry import trace as _otel_trace  # noqa: F811
+    from opentelemetry import trace as _otel_trace
     from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
     from opentelemetry.sdk.resources import Resource
     from opentelemetry.sdk.trace import TracerProvider

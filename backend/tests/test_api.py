@@ -3,133 +3,130 @@
 from __future__ import annotations
 
 import json
-import logging
 import time
 from collections.abc import AsyncIterator, Callable
-from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, cast
-from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import FastAPI, Request, Response
-from fastapi.responses import ORJSONResponse
 from pydantic import TypeAdapter
-from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
+from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.testclient import TestClient
 
 from app.api.dependencies import (
-    get_settings,
-    get_db_session,
-    get_conversation_repository,
-    get_message_repository,
-    get_usage_repository,
     get_attachment_repository,
     get_attachment_service,
-    get_llm_router,
+    get_chat_service,
+    get_conversation_repository,
     get_conversation_service,
     get_core_memory_manager,
+    get_db_session,
+    get_llm_router,
     get_memory_service,
+    get_message_repository,
     get_plugin_service,
     get_provider_repository,
     get_provider_service,
+    get_settings,
+    get_usage_repository,
     get_usage_service,
-    get_chat_service,
 )
 from app.api.errors import (
     _map_llm_error,
+    _StartupState,
+    get_uptime,
     llm_error_handler,
     unhandled_error_handler,
-    get_uptime,
-    _StartupState,
-    _startup,
-)
-from app.core.exceptions import (
-    AstraError,
-    ConflictError,
-    ResourceNotFoundError,
-    astra_error_handler,
 )
 from app.api.middleware import (
+    AuthenticationMiddleware,
+    RateLimitMiddleware,
     RequestIDMiddleware,
-    TimingMiddleware,
     RequestLoggingMiddleware,
     SecurityHeadersMiddleware,
-    RateLimitMiddleware,
-    AuthenticationMiddleware,
+    TimingMiddleware,
 )
 from app.api.routes.attachments import (
     _attachment_to_response,
+)
+from app.api.routes.attachments import (
     router as attachments_router,
 )
 from app.api.routes.chat import (
-    _content_schema_to_domain,
+    _chat_result_to_response,
     _content_domain_to_schema,
+    _content_schema_to_domain,
+    _conversation_to_response,
+    _message_to_response,
     _params_schema_to_domain,
     _usage_to_response,
-    _message_to_response,
-    _conversation_to_response,
-    _chat_result_to_response,
-    router as chat_router,
 )
 from app.api.routes.conversations import (
     _conversation_to_response as _conv_to_response,
+)
+from app.api.routes.conversations import (
     router as conversations_router,
 )
 from app.api.routes.health import router as health_router
 from app.api.routes.metrics import router as metrics_router
 from app.api.routes.plugins import (
     _spec_to_response as _plugin_spec_to_response,
+)
+from app.api.routes.plugins import (
     router as plugins_router,
 )
 from app.api.routes.providers import (
     _spec_to_response,
-    router as providers_router,
 )
 from app.api.routes.system import router as system_router
-from app.api.schemas.attachment import AttachmentCreate, AttachmentResponse, AttachmentListResponse
+from app.api.schemas.attachment import AttachmentCreate, AttachmentResponse
 from app.api.schemas.chat import (
-    TextBlockSchema,
+    ChatRequest,
+    ChatResponse,
+    ContentBlockSchema,
+    ContinueRequest,
+    GenerationParamsSchema,
     ImageBlockSchema,
+    MessageResponse,
+    StreamDoneEvent,
+    StreamErrorEvent,
+    TextBlockSchema,
+    TextDeltaEvent,
     ToolCallBlockSchema,
     ToolResultBlockSchema,
-    ContentBlockSchema,
-    GenerationParamsSchema,
-    ChatRequest,
-    ContinueRequest,
     UsageResponse,
-    MessageResponse,
-    ChatResponse,
-    TextDeltaEvent,
-    StreamErrorEvent,
-    StreamDoneEvent,
 )
-from app.api.schemas.common import PaginationParams, PaginatedResponse, MessageResponse as CommonMessageResponse
-from app.api.schemas.conversation import ConversationCreate, ConversationUpdate, ConversationResponse, ConversationListResponse
+from app.api.schemas.common import MessageResponse as CommonMessageResponse
+from app.api.schemas.common import PaginatedResponse, PaginationParams
+from app.api.schemas.conversation import (
+    ConversationCreate,
+    ConversationListResponse,
+    ConversationResponse,
+    ConversationUpdate,
+)
 from app.api.schemas.health import HealthResponse
-from app.api.schemas.plugin import (
-    PluginInstallRequest,
-    PluginUpdateRequest,
-    PluginResponse,
-    PluginListResponse,
-)
 from app.api.schemas.provider import (
-    ProviderRegisterRequest,
-    ProviderUpdateRequest,
-    ProviderResponse,
-    ProviderListResponse,
-    ProviderCheckRequest,
-    ProviderCheckResponse,
     ModelInfoResponse,
     ModelListResponse,
+    ProviderCheckRequest,
+    ProviderCheckResponse,
+    ProviderRegisterRequest,
+    ProviderUpdateRequest,
 )
-from app.api.schemas.system import VersionInfo, ConfigInfo, MetricsResponse
-from app.config.settings import Settings, Environment, LogFormat, _DEFAULT_DEV_SECRET_KEY
+from app.api.schemas.system import ConfigInfo, MetricsResponse, VersionInfo
+from app.config.settings import _DEFAULT_DEV_SECRET_KEY, Environment, Settings
+from app.core.exceptions import (
+    AstraError,
+    ConflictError,
+    ResourceNotFoundError,
+    astra_error_handler,
+)
 from app.domain.attachment import Attachment
 from app.domain.conversation import Conversation, ConversationMetadata, ConversationParticipant
 from app.domain.enums import (
     AttachmentType,
-    ContentBlockType,
     ConversationStatus,
     MessageRole,
     ProviderType,
@@ -137,10 +134,10 @@ from app.domain.enums import (
 from app.domain.message import (
     ContentBlock,
     ImageBlock,
+    Message,
     TextBlock,
     ToolCallBlock,
     ToolResultBlock,
-    Message,
 )
 from app.domain.plugin import PluginSpec, PluginStatus
 from app.domain.provider import ProviderSpec
@@ -154,16 +151,14 @@ from app.llm.exceptions import (
     ProviderTimeoutError,
     RouterNoProviderError,
 )
-from app.llm.models import GenerationParams
 from app.llm.router import LLMRouter
+from app.services.attachment_service import AttachmentService
 from app.services.chat_service import ChatResult, ChatService
 from app.services.conversation_service import ConversationService
-from app.services.attachment_service import AttachmentService
 from app.services.memory_service import MemoryService
 from app.services.plugin_service import PluginService
 from app.services.provider_service import ProviderService
 from app.services.usage_service import UsageService
-
 
 # ======================================================================
 # Helpers
@@ -841,7 +836,7 @@ class TestChatHelpers:
         assert len(result.participants) == 1
 
     def test_chat_result_to_response(self) -> None:
-        now_val = datetime.now(timezone.utc)
+        now_val = datetime.now(UTC)
         msg = Message(id="msg1", conversation_id="conv1", role=MessageRole.ASSISTANT, content=[TextBlock(text="Hi")])
         conv = Conversation(id="conv1", title="Test")
         usage = Usage(prompt_tokens=10, completion_tokens=5, total_tokens=15)
@@ -870,7 +865,7 @@ class TestConversationHelpers:
 
 class TestAttachmentHelpers:
     def test_attachment_to_response(self) -> None:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         att = Attachment(
             id="att1",
             conversation_id="conv1",
@@ -1146,7 +1141,7 @@ class TestHealthRoute:
 
 
 class TestMetricsRoute:
-    def test_metrics_endpoint(self) -> None:
+    def test_metrics_json(self) -> None:
         app = FastAPI()
         app.include_router(metrics_router)
         app.state.settings = _make_mock_settings()
@@ -1164,11 +1159,29 @@ class TestMetricsRoute:
         app.dependency_overrides[get_conversation_service] = lambda: mock_conv_service
 
         client = TestClient(app)
-        resp = client.get("/metrics/json")
+        resp = client.get("/metrics", headers={"Accept": "application/json"})
         assert resp.status_code == 200
         data = resp.json()
         assert "uptime_seconds" in data
         assert "active_conversations" in data
+
+    def test_metrics_prometheus_default(self) -> None:
+        app = FastAPI()
+        app.include_router(metrics_router)
+        app.state.settings = _make_mock_settings()
+        app.state.db_engine = MockEngine()
+
+        mock_session = AsyncMock()
+        async def _mock_db_session() -> AsyncIterator[Any]:
+            yield mock_session
+
+        app.dependency_overrides[get_db_session] = _mock_db_session
+        app.dependency_overrides[get_message_repository] = lambda: AsyncMock()
+
+        client = TestClient(app)
+        resp = client.get("/metrics")
+        assert resp.status_code == 200
+        assert resp.headers.get("content-type", "").startswith("text/plain")
 
 
 class TestSystemRoute:
@@ -1343,7 +1356,7 @@ class TestAttachmentsRoute:
         app.dependency_overrides[get_db_session] = _mock_db_session
 
         mock_service = MagicMock(spec=AttachmentService)
-        now_val = datetime.now(timezone.utc)
+        now_val = datetime.now(UTC)
         att = Attachment(id="att-new", conversation_id="conv1", file_name="doc.txt", mime_type="text/plain", size_bytes=500, attachment_type=AttachmentType.DOCUMENT, storage_path="conv1/doc.txt", created_at=now_val)
         mock_service.create = AsyncMock(return_value=att)
         app.dependency_overrides[get_attachment_service] = lambda: mock_service
@@ -1363,7 +1376,7 @@ class TestAttachmentsRoute:
         app.dependency_overrides[get_db_session] = _mock_db_session
 
         mock_service = MagicMock(spec=AttachmentService)
-        now_val = datetime.now(timezone.utc)
+        now_val = datetime.now(UTC)
         att = Attachment(id="att-1", conversation_id="conv1", file_name="doc.txt", mime_type="text/plain", size_bytes=500, attachment_type=AttachmentType.DOCUMENT, storage_path="conv1/doc.txt", created_at=now_val)
         mock_service.get = AsyncMock(return_value=att)
         app.dependency_overrides[get_attachment_service] = lambda: mock_service

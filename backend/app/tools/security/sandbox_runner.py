@@ -15,7 +15,6 @@ import sys
 from dataclasses import dataclass
 from typing import Any
 
-from app.tools.errors import SandboxViolation
 from app.tools.python.sandbox import SandboxConfig
 
 SANDBOX_HEADER = r'''
@@ -276,11 +275,11 @@ def _build_blocked_import_checker(
     allowed_json = json.dumps(list(allowed_modules))
 
     lines.append(f"    if base in {blocked_json}:")
-    lines.append(f'    raise ImportError(f"Module " + name + " is blocked by the sandbox")')
+    lines.append('    raise ImportError(f"Module " + name + " is blocked by the sandbox")')
 
     if allowed_modules:
         lines.append(f"    if {allowed_json} and base not in {allowed_json}:")
-        lines.append(f'    raise ImportError(f"Module " + name + " is not in allowed modules")')
+        lines.append('    raise ImportError(f"Module " + name + " is not in allowed modules")')
 
     lines.append("    return _sandbox_original_import(name, *args, **kwargs)")
     lines.append("")

@@ -7,7 +7,6 @@ sub-components.
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
-from uuid import uuid4
 
 import pytest
 
@@ -19,7 +18,6 @@ from app.agents.models.plan import Plan
 from app.agents.models.task import Task, TaskStatus
 from app.agents.planner import Planner
 from app.agents.reflection import Reflection
-from app.agents.state import AgentState
 from app.domain.message import Message, TextBlock
 from app.llm.models import CompletionResponse
 from app.llm.router import LLMRouter

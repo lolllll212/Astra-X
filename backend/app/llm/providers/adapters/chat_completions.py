@@ -29,12 +29,12 @@ from app.domain.stream import (
     ToolCallEndEvent,
     ToolCallStartEvent,
 )
+from app.domain.usage import Usage
 from app.llm.models import (
     CompletionRequest,
     CompletionResponse,
     FinishReason,
 )
-from app.domain.usage import Usage
 from app.llm.providers.adapters.base import ProtocolAdapter
 
 __all__ = [

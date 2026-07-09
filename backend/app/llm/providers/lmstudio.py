@@ -6,12 +6,10 @@ Communicates with a local LM Studio server via its OpenAI-compatible API.
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from typing import Any
 from uuid import uuid4
 
 from app.domain.enums import OpenAIProtocol
 from app.domain.stream import (
-    StreamDoneEvent,
     StreamErrorEvent,
     StreamEvent,
     StreamMetadataEvent,

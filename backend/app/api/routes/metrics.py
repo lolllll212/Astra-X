@@ -2,14 +2,14 @@
 
 """Application metrics endpoint.
 
-Provides a JSON snapshot endpoint and a Prometheus scrape endpoint
-at ``GET /metrics``.
+Returns Prometheus exposition format by default, or a JSON snapshot
+when the ``Accept`` header contains ``application/json``.
 """
 
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import PlainTextResponse, Response
+from fastapi.responses import JSONResponse, Response
 
 from app.api.dependencies import get_conversation_service, get_message_repository
 from app.api.errors import get_uptime
@@ -22,17 +22,33 @@ router = APIRouter(prefix="/metrics", tags=["metrics"])
 
 @router.get(
     "",
-    response_class=PlainTextResponse,
-    summary="Prometheus metrics scrape endpoint",
-    include_in_schema=False,
+    summary="Application metrics (auto-detects format)",
 )
-async def get_prometheus_metrics() -> Response:
-    """Return metrics in Prometheus text exposition format.
+async def get_metrics(
+    request: Request,
+    conversation_service: ConversationService = Depends(get_conversation_service),
+    message_repository: MessageRepository = Depends(get_message_repository),
+) -> Response:
+    """Return metrics in the requested format.
 
-    This is the endpoint that Prometheus scrapes.  The JSON snapshot
-    endpoint is available at ``GET /api/v1/metrics/json``.
+    Returns a JSON snapshot when ``Accept: application/json`` is
+    present; otherwise returns Prometheus text exposition format.
     """
-    from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+    accept = request.headers.get("accept", "")
+
+    if "application/json" in accept:
+        active_conversations = len(await conversation_service.list_active())
+        total_messages = await message_repository.count()
+
+        return JSONResponse(
+            MetricsResponse(
+                uptime_seconds=get_uptime(),
+                active_conversations=active_conversations,
+                total_messages=total_messages,
+            ).model_dump(),
+        )
+
+    from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
     data = generate_latest()
     return Response(content=data, media_type=CONTENT_TYPE_LATEST)

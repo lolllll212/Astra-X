@@ -5,8 +5,7 @@ Covers ContextBuilder, ConversationService, and ChatService.
 
 from __future__ import annotations
 
-from unittest.mock import ANY, AsyncMock, MagicMock
-from uuid import uuid4
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -14,13 +13,12 @@ from app.domain.conversation import Conversation, ConversationMetadata
 from app.domain.enums import ConversationStatus, MessageRole
 from app.domain.message import Message, TextBlock
 from app.domain.usage import Usage
-from app.llm.models import CompletionResponse, GenerationParams
+from app.llm.models import CompletionResponse
 from app.llm.router import LLMRouter
-from app.services.chat_service import ChatService, ChatResult
+from app.services.chat_service import ChatResult, ChatService
 from app.services.context_builder import ContextBuilder
 from app.services.conversation_service import ConversationService
 from app.services.usage_service import UsageService
-
 
 # =========================================================================
 # ContextBuilder
@@ -533,7 +531,7 @@ class TestChatService:
         usage_repo: AsyncMock,
         llm_router: MagicMock,
     ) -> None:
-        from app.domain.stream import StreamDoneEvent, StreamEvent, StreamStartEvent, TextDeltaEvent
+        from app.domain.stream import StreamEvent, StreamStartEvent, TextDeltaEvent
 
         async def _gen_stream(*args: object, **kw: object) -> object:
             yield TextDeltaEvent(delta="Hello")

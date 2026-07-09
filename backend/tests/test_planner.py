@@ -6,7 +6,6 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from app.agents.models.task import Task
 from app.agents.planner import Planner
 from app.domain.message import Message, TextBlock
 from app.llm.exceptions import GenerationError

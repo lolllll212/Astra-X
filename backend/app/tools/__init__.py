@@ -14,7 +14,12 @@ from __future__ import annotations
 from app.tools.base import Tool
 from app.tools.capabilities import CapabilityRegistry
 from app.tools.context import ToolContext
-from app.tools.errors import CapabilityNotFoundError, ToolError, ToolExecutionError, ToolNotFoundError
+from app.tools.errors import (
+    CapabilityNotFoundError,
+    ToolError,
+    ToolExecutionError,
+    ToolNotFoundError,
+)
 from app.tools.executor import ToolExecutor
 from app.tools.models import ToolCall, ToolSchema
 from app.tools.registry import ToolRegistry

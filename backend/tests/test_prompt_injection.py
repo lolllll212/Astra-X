@@ -7,7 +7,7 @@ Covers :class:`PromptInjectionDetector`, :class:`InjectionResult`,
 
 from __future__ import annotations
 
-from unittest.mock import ANY, AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -18,11 +18,11 @@ from app.core.security import (
     SanitizationAction,
     strip_dangerous_markdown,
 )
-from app.domain.enums import ContentBlockType, MessageRole
-from app.domain.message import ContentBlock, Message, TextBlock
-from app.llm.models import CompletionResponse, GenerationParams
+from app.domain.enums import MessageRole
+from app.domain.message import Message, TextBlock
+from app.llm.models import CompletionResponse
 from app.llm.router import LLMRouter
-from app.services.chat_service import ChatService, ChatResult
+from app.services.chat_service import ChatResult, ChatService
 
 
 @pytest.fixture

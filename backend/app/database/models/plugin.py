@@ -28,7 +28,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base
-from app.database.types import AutoUUID, JSON
+from app.database.types import JSON, AutoUUID
 
 
 class PluginModel(Base):

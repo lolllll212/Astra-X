@@ -7,9 +7,7 @@ ScrapeTool, SearchTool, DateTimeTool, UuidTool, and all GitHub tools.
 from __future__ import annotations
 
 import json
-from functools import partial
 from pathlib import Path
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -24,7 +22,6 @@ from app.tools.github.commits import GitHubCommitsTool
 from app.tools.github.issues import GitHubIssuesTool
 from app.tools.github.pull_requests import GitHubPullRequestsTool
 from app.tools.github.repository import GitHubRepositoryTool
-from app.tools.result import ToolResult
 from app.tools.web.download import DownloadTool
 from app.tools.web.scrape import ScrapeTool
 from app.tools.web.search import SearchTool

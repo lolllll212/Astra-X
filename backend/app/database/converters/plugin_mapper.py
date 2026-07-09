@@ -23,16 +23,16 @@ from app.domain.plugin import (
 )
 
 __all__ = [
-    "plugin_to_model",
-    "plugin_from_model",
-    "plugin_config_to_model",
     "plugin_config_from_model",
-    "plugin_dependency_to_model",
+    "plugin_config_to_model",
     "plugin_dependency_from_model",
-    "plugin_permission_to_model",
-    "plugin_permission_from_model",
-    "plugin_limit_to_model",
+    "plugin_dependency_to_model",
+    "plugin_from_model",
     "plugin_limit_from_model",
+    "plugin_limit_to_model",
+    "plugin_permission_from_model",
+    "plugin_permission_to_model",
+    "plugin_to_model",
 ]
 
 

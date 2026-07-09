@@ -12,7 +12,6 @@ from app.database.repositories.plugin_repository import PluginRepository
 from app.domain.plugin import PluginSpec, PluginStatus
 from app.services.plugin_service import PluginService
 
-
 # =========================================================================
 # PluginRepository
 # =========================================================================

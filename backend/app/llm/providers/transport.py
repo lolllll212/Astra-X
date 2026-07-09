@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncIterator
-from typing import Any
+from typing import Any, cast
 
 import httpx
 
@@ -120,7 +120,7 @@ class Transport:
                 f"Provider returned {exc.response.status_code}: {exc.response.text[:200]}",
             ) from exc
 
-        return resp.json()
+        return cast(dict[str, Any], resp.json())
 
     async def stream(
         self,

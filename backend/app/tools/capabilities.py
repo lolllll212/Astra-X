@@ -9,9 +9,9 @@ that provides an existing capability requires zero planner changes.
 
 from __future__ import annotations
 
-from app.tools.errors import CapabilityNotFoundError
-
 from typing import TYPE_CHECKING
+
+from app.tools.errors import CapabilityNotFoundError
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

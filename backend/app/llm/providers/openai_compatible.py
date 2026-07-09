@@ -11,12 +11,10 @@ code works with both ``/chat/completions`` and ``/responses``.
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from typing import Any
 from uuid import uuid4
 
 from app.domain.enums import OpenAIProtocol
 from app.domain.stream import (
-    StreamDoneEvent,
     StreamErrorEvent,
     StreamEvent,
     StreamMetadataEvent,

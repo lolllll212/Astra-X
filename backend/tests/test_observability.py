@@ -2,13 +2,9 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
-
-import pytest
-import app.observability  # noqa: F401 — ensure metrics are registered
-
 from prometheus_client import REGISTRY
 
+import app.observability  # noqa: F401 — ensure metrics are registered
 from app.core.tracing import (
     Tracer,
     format_traceparent,
@@ -51,9 +47,8 @@ class TestTraceparentPropagation:
         tracer = Tracer(trace_id=tid)
         assert tracer._trace_id == tid
 
-        with tracer.span("root"):
-            with tracer.span("child"):
-                pass
+        with tracer.span("root"), tracer.span("child"):
+            pass
 
         root = tracer._root
         assert root is not None

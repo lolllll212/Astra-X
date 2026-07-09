@@ -4,16 +4,13 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-import pytest
-
 from app.llm.base import LLMProvider
 from app.llm.model_selector import (
-    CapabilityProfile,
     DEFAULT_MODEL_PROFILES,
+    CapabilityProfile,
     ModelProfile,
     ModelSelector,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers

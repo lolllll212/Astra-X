@@ -9,7 +9,6 @@ from __future__ import annotations
 import json
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
-from functools import partial
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -18,7 +17,6 @@ import pytest
 from app.config.settings import Settings
 from app.domain.enums import MessageRole, ModelCapability, ProviderType
 from app.domain.message import (
-    ContentBlock,
     ImageBlock,
     Message,
     TextBlock,
@@ -37,7 +35,6 @@ from app.domain.stream import (
     ToolCallEndEvent,
     ToolCallStartEvent,
 )
-from app.domain.usage import Usage
 from app.llm.base import LLMProvider
 from app.llm.exceptions import (
     GenerationError,
@@ -53,14 +50,16 @@ from app.llm.models import (
     FinishReason,
     GenerationParams,
 )
-from app.llm.providers.adapters.chat_completions import domain_to_openai_messages as _domain_to_openai_messages, parse_finish_reason as _parse_finish_reason
+from app.llm.providers.adapters.chat_completions import (
+    domain_to_openai_messages as _domain_to_openai_messages,
+)
+from app.llm.providers.adapters.chat_completions import parse_finish_reason as _parse_finish_reason
 from app.llm.providers.lmstudio import LMStudioProvider
 from app.llm.providers.ollama import OllamaProvider, _domain_to_ollama_messages
 from app.llm.providers.openai_compatible import OpenAICompatibleProvider
 from app.llm.registry import ProviderRegistry
 from app.llm.router import LLMRouter
 from app.llm.streaming import StreamCollector, collect_stream
-
 
 # =========================================================================
 # Helpers

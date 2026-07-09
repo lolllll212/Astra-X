@@ -40,12 +40,11 @@ from __future__ import annotations
 import random
 import time
 from collections.abc import Iterator
-from contextlib import contextmanager, nullcontext
+from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any
 from uuid import uuid4
-
 
 # -- W3C trace context helpers ----------------------------------------------
 
@@ -145,7 +144,7 @@ class NoOpTracer:
     tracer has been set for the current request."""
 
     @contextmanager
-    def span(  # noqa: PLR6301
+    def span(
         self,
         name: str = "",
         *,
@@ -154,7 +153,7 @@ class NoOpTracer:
     ) -> Iterator[None]:
         yield
 
-    def start(  # noqa: PLR6301
+    def start(
         self,
         name: str = "",
         *,
@@ -163,16 +162,16 @@ class NoOpTracer:
     ) -> _NoOpSpan:
         return _NoOpSpan()
 
-    def end(  # noqa: PLR6301
+    def end(
         self,
         span: Any = None,
     ) -> None:
         pass
 
-    def render_tree(self) -> str:  # noqa: PLR6301
+    def render_tree(self) -> str:
         return ""
 
-    def serialize(self) -> dict[str, Any]:  # noqa: PLR6301
+    def serialize(self) -> dict[str, Any]:
         return {}
 
 

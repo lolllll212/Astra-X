@@ -21,7 +21,6 @@ from typing import TYPE_CHECKING
 from app.core.logging import get_logger
 
 if TYPE_CHECKING:
-    from app.llm.base import LLMProvider
     from app.llm.router import LLMRouter
 
 logger = get_logger(__name__)

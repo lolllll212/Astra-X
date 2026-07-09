@@ -11,8 +11,8 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 from app.domain.enums import OpenAIProtocol
-from app.llm.models import CompletionRequest, CompletionResponse
 from app.domain.stream import StreamEvent
+from app.llm.models import CompletionRequest, CompletionResponse
 
 
 class ProtocolAdapter(ABC):

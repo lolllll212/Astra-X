@@ -3,15 +3,11 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-import pytest
-
-from app.agents.feedback import FeedbackLoop, FeedbackMemory, FeedbackResult
+from app.agents.feedback import FeedbackLoop, FeedbackResult
 from app.agents.models.execution import ExecutionResult, ReflectionDecision, ReflectionResult
 from app.agents.models.task import TaskStatus
-from app.domain.enums import MemoryScope
 from app.memory.embedder import Embedder
 from app.memory.manager import MemoryManager
-from app.memory.models.knowledge import KnowledgeTriple
 from app.memory.models.memory import MemoryType
 from app.memory.vector.sqlite_vector import SQLiteVectorStore
 

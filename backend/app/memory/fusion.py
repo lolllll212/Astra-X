@@ -47,5 +47,5 @@ def normalise_rrf(
         return {}
     max_score = max(scores.values())
     if max_score <= 0.0:
-        return {k: 0.0 for k in scores}
+        return dict.fromkeys(scores, 0.0)
     return {k: v / max_score for k, v in scores.items()}

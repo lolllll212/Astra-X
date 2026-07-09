@@ -13,7 +13,6 @@ from __future__ import annotations
 import json
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -30,7 +29,6 @@ from app.domain.message import (
 from app.domain.provider import ProviderSpec
 from app.domain.stream import (
     StreamDoneEvent,
-    StreamEvent,
     StreamUsageEvent,
     TextDeltaEvent,
     ToolCallDeltaEvent,
@@ -45,11 +43,9 @@ from app.llm.exceptions import (
 )
 from app.llm.models import (
     CompletionRequest,
-    CompletionResponse,
     FinishReason,
     GenerationParams,
 )
-from app.llm.providers.adapters.base import ProtocolAdapter
 from app.llm.providers.adapters.chat_completions import (
     ChatCompletionsAdapter,
     domain_to_openai_messages,
@@ -61,7 +57,6 @@ from app.llm.providers.adapters.responses_api import (
 )
 from app.llm.providers.openai_compatible import OpenAICompatibleProvider
 from app.llm.providers.transport import Transport
-
 
 # =========================================================================
 # Helpers

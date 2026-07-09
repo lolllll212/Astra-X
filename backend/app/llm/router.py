@@ -21,7 +21,6 @@ from collections.abc import AsyncIterator, Sequence
 from app.config.settings import Settings
 from app.core.logging import get_logger
 from app.domain.provider import ProviderSpec
-from app.observability import provider_request_duration, provider_request_total
 from app.domain.stream import StreamEvent
 from app.llm.base import LLMProvider
 from app.llm.exceptions import (
@@ -34,6 +33,7 @@ from app.llm.exceptions import (
 from app.llm.factory import create_provider_adapter
 from app.llm.models import CompletionRequest, CompletionResponse
 from app.llm.registry import ProviderRegistry
+from app.observability import provider_request_duration, provider_request_total
 
 __all__ = [
     "LLMRouter",

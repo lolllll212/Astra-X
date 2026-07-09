@@ -27,7 +27,6 @@ __all__ = [
     "Embedding",
     "EmbeddingResult",
     "Forgetting",
-    "fuse_reciprocal_rank",
     "KnowledgeGraph",
     "KnowledgeTriple",
     "Memory",
@@ -36,7 +35,6 @@ __all__ = [
     "MemoryStorage",
     "MemorySummarizer",
     "MemoryType",
-    "normalise_rrf",
     "Reflection",
     "RetrievalResult",
     "Retriever",
@@ -45,4 +43,6 @@ __all__ = [
     "SearchResult",
     "VectorRecord",
     "VectorStore",
+    "fuse_reciprocal_rank",
+    "normalise_rrf",
 ]

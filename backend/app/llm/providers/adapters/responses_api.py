@@ -22,7 +22,6 @@ from app.domain.message import (
     ToolCallBlock,
     ToolResultBlock,
 )
-from app.domain.usage import Usage
 from app.domain.stream import (
     StreamDoneEvent,
     StreamEvent,
@@ -30,8 +29,8 @@ from app.domain.stream import (
     TextDeltaEvent,
     ToolCallDeltaEvent,
     ToolCallEndEvent,
-    ToolCallStartEvent,
 )
+from app.domain.usage import Usage
 from app.llm.models import (
     CompletionRequest,
     CompletionResponse,

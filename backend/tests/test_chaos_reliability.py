@@ -16,20 +16,17 @@ import asyncio
 import time as time_module
 from datetime import UTC, datetime
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
-from uuid import uuid4
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from app.domain.enums import MemoryScope
-from app.domain.message import ContentBlock, Message, TextBlock
+from app.domain.message import Message, TextBlock
 from app.memory.forgetting import Forgetting
 from app.memory.manager import MemoryManager
 from app.memory.models.memory import Memory, MemoryType
-from app.memory.scorer import Scorer
 from app.memory.storage import MemoryStorage
 from app.memory.vector.sqlite_vector import SQLiteVectorStore
-
 
 # =========================================================================
 # Concurrent stress — 500 concurrent store + retrieve
@@ -161,7 +158,6 @@ class TestProviderOutage:
 
     @pytest.fixture
     def settings(self) -> Any:
-        from unittest.mock import MagicMock
         s = MagicMock()
         s.ollama_base_url = "http://localhost:11434"
         s.lm_studio_base_url = "http://localhost:1234"
@@ -201,8 +197,12 @@ class TestProviderOutage:
         """When the primary provider times out, the router tries the fallback."""
         from app.llm.base import LLMProvider
         from app.llm.exceptions import ProviderTimeoutError
-        from app.llm.models import CompletionRequest, CompletionResponse, GenerationParams, FinishReason
-        from unittest.mock import MagicMock
+        from app.llm.models import (
+            CompletionRequest,
+            CompletionResponse,
+            FinishReason,
+            GenerationParams,
+        )
 
         primary = MagicMock(spec=LLMProvider)
         primary.provider_id = "primary"
@@ -239,7 +239,6 @@ class TestProviderOutage:
         from app.llm.base import LLMProvider
         from app.llm.exceptions import ProviderTimeoutError, RouterNoProviderError
         from app.llm.models import CompletionRequest, GenerationParams
-        from unittest.mock import MagicMock
 
         p = MagicMock(spec=LLMProvider)
         p.provider_id = "fallback_p"
@@ -569,7 +568,7 @@ class TestStreamingFailures:
             description = "a crashing tool"
             @property
             def schema(self) -> Any:
-                from app.tools.models import ToolSchema, ToolParameter
+                from app.tools.models import ToolSchema
                 return ToolSchema(
                     name="crash",
                     description="a crashing tool",

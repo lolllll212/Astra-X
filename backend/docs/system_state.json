@@ -1,0 +1,61 @@
+{
+  "schema_version": "1.0",
+  "last_updated": "2026-07-09T21:41:00Z",
+  "mode": "AEE",
+  "health_baseline": {
+    "ruff": "pass (pre-existing E501 warnings in coordinator.py only)",
+    "mypy_strict": "22 errors (8 files) — all pre-existing; our files pass clean",
+    "pytest": "990 passed, 14 warnings",
+    "coverage": "79%"
+  },
+  "active_features": [
+    {
+      "name": "protocol_aware_transport",
+      "status": "deployed",
+      "files": [
+        "app/llm/providers/transport.py",
+        "app/llm/providers/adapters/base.py",
+        "app/llm/providers/adapters/chat_completions.py",
+        "app/llm/providers/adapters/responses_api.py",
+        "app/domain/enums.py",
+        "app/domain/provider.py",
+        "app/llm/factory.py",
+        "app/llm/base.py",
+        "app/llm/providers/openai_compatible.py",
+        "app/llm/providers/lmstudio.py",
+        "app/database/models/provider.py",
+        "app/database/converters/provider_mapper.py",
+        "tests/test_protocol_adapters.py"
+      ]
+    },
+    {
+      "name": "autonomous_metrics_format",
+      "status": "deployed",
+      "files": [
+        "app/api/routes/metrics.py",
+        "tests/test_api.py"
+      ]
+    }
+  ],
+  "backlog": [
+    {
+      "id": 1,
+      "task": "Fix pre-existing mypy strict errors (22 across 8 files)",
+      "priority": "medium",
+      "deferred": true,
+      "note": "Mostly opentelemetry stub issues and legacy type violations"
+    },
+    {
+      "id": 2,
+      "task": "Reduce ruff E501 line-length warnings in coordinator.py",
+      "priority": "low",
+      "deferred": true
+    },
+    {
+      "id": 3,
+      "task": "Refactor OllamaProvider to use Transport + ProtocolAdapter pattern",
+      "priority": "low",
+      "deferred": true
+    }
+  ]
+}

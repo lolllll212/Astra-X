@@ -8,22 +8,18 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
-from unittest.mock import ANY, AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from app.config.settings import Environment
-from app.tools.base import Tool
 from app.tools.builtin.calculator import CalculatorTool
 from app.tools.builtin.json_tools import JsonTool
 from app.tools.builtin.text import TextTool
 from app.tools.context import ToolContext
 from app.tools.filesystem.read_file import ReadFileTool
 from app.tools.python.runner import PythonRunnerTool
-from app.tools.result import ToolResult
 from app.tools.web.fetch import FetchTool
-
 
 # =========================================================================
 # Helpers

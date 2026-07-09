@@ -26,7 +26,7 @@ from app.observability import plugin_load_duration
 if TYPE_CHECKING:
     from app.database.repositories.plugin_repository import PluginRepository
     from app.domain.plugin import PluginSpec
-    from app.plugins.base import Plugin, PluginContext
+    from app.plugins.base import Plugin
     from app.services.provider_service import ProviderService
     from app.tools.capabilities import CapabilityRegistry
     from app.tools.registry import ToolRegistry
@@ -335,7 +335,11 @@ class PluginManager:
 
         from app.plugins.base import (
             PluginContext as _PluginContext,
+        )
+        from app.plugins.base import (
             PluginRegistries as _PluginRegistries,
+        )
+        from app.plugins.base import (
             PluginServices as _PluginServices,
         )
 

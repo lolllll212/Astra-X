@@ -6,7 +6,7 @@ All metrics are registered on a shared ``REGISTRY`` and use the
 
 from __future__ import annotations
 
-from prometheus_client import Counter, Gauge, Histogram, Info, REGISTRY
+from prometheus_client import REGISTRY, Counter, Gauge, Histogram, Info
 
 metrics_registry = REGISTRY
 

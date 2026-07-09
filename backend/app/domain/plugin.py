@@ -13,14 +13,14 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field
 
 __all__ = [
-    "PluginSpec",
+    "InstallType",
     "PluginConfigSpec",
     "PluginDependencySpec",
-    "PluginPermissionSpec",
     "PluginLimitSpec",
-    "TrustTier",
-    "InstallType",
+    "PluginPermissionSpec",
+    "PluginSpec",
     "PluginStatus",
+    "TrustTier",
 ]
 
 

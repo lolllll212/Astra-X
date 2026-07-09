@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import time
 
-import pytest
-
 from app.core.tracing import (
     NoOpTracer,
     Span,
@@ -57,9 +55,8 @@ class TestTracer:
         with tracer.span("root"):
             with tracer.span("child1"):
                 pass
-            with tracer.span("child2"):
-                with tracer.span("grandchild"):
-                    pass
+            with tracer.span("child2"), tracer.span("grandchild"):
+                pass
         assert tracer._root is not None
         assert len(tracer._root.children) == 2
         assert tracer._root.children[0].name == "child1"
@@ -87,9 +84,8 @@ class TestTracer:
 
     def test_render_tree_nested(self) -> None:
         tracer = Tracer()
-        with tracer.span("root"):
-            with tracer.span("child"):
-                pass
+        with tracer.span("root"), tracer.span("child"):
+            pass
         tree = tracer.render_tree()
         assert "root" in tree
         assert "child" in tree

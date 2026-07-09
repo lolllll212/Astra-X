@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from typing import Any
-from unittest.mock import ANY, AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
@@ -36,16 +36,12 @@ from app.domain.stream import (
     ToolProgressEvent,
     ToolResultStreamEvent,
 )
-from app.llm.models import CompletionRequest
 from app.llm.router import LLMRouter
 from app.services.coordinator import ChatCoordinator, _extract_user_goal, _inject_tool_schemas
-from app.tools.capabilities import CapabilityRegistry
-from app.tools.context import ToolContext
 from app.tools.executor import ToolExecutor
 from app.tools.models import ToolParameter, ToolSchema
-from app.tools.result import ToolResult
 from app.tools.registry import ToolRegistry
-
+from app.tools.result import ToolResult
 
 # ---------------------------------------------------------------------------
 # Helpers

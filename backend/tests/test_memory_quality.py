@@ -13,23 +13,19 @@ rather than exercising individual code paths:
 
 from __future__ import annotations
 
-import math
 import time as time_module
 from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
 
-from app.memory.chunker import Chunker
 from app.memory.consolidation import Consolidation
 from app.memory.forgetting import Forgetting
 from app.memory.models.memory import Memory, MemoryType
-from app.memory.models.retrieval import MemoryQuery, RetrievalResult
+from app.memory.models.retrieval import MemoryQuery
 from app.memory.scorer import Scorer
 from app.memory.storage import MemoryStorage
 from app.memory.vector.sqlite_vector import SQLiteVectorStore
-
 
 # =========================================================================
 # Retention / Forgetting Curve
@@ -278,8 +274,9 @@ class TestRetrievalScale:
     @pytest.fixture
     async def populated_store(self) -> SQLiteVectorStore:
         store = SQLiteVectorStore()
-        from app.memory.vector.base import VectorRecord
         import random
+
+        from app.memory.vector.base import VectorRecord
         random.seed(42)
         batch: list[VectorRecord] = []
         for i in range(self.SCALE):
@@ -535,7 +532,7 @@ class TestScorerQuality:
 
 class TestReciprocalRankFusion:
     def test_identity_single_list(self) -> None:
-        from app.memory.fusion import fuse_reciprocal_rank, normalise_rrf
+        from app.memory.fusion import fuse_reciprocal_rank
 
         mems = [Memory(id="a", content="A"), Memory(id="b", content="B")]
         scores = fuse_reciprocal_rank([mems])
@@ -621,12 +618,12 @@ class FakeEmbedderForConsolidation:
 class TestHybridRetrieval:
     @pytest.fixture
     async def setup(self) -> tuple[Retriever, MemoryStorage, KnowledgeGraph]:
+        from app.memory.knowledge_graph import KnowledgeGraph
+        from app.memory.models.memory import Memory
         from app.memory.retriever import Retriever
         from app.memory.scorer import Scorer
         from app.memory.storage import MemoryStorage
         from app.memory.vector.sqlite_vector import SQLiteVectorStore
-        from app.memory.models.memory import Memory
-        from app.memory.knowledge_graph import KnowledgeGraph
 
         store = SQLiteVectorStore()
         storage = MemoryStorage()
@@ -677,7 +674,6 @@ class TestHybridRetrieval:
     @pytest.mark.asyncio
     async def test_semantic_path_returns_relevant(self, setup) -> None:
         retriever, storage, kg = setup
-        from app.memory.models.retrieval import MemoryQuery
         query = MemoryQuery(query="dark mode", conversation_id="conv-1", limit=10)
         results = await retriever.retrieve(query)
         contents = [r.memory.content for r in results]
@@ -686,7 +682,6 @@ class TestHybridRetrieval:
     @pytest.mark.asyncio
     async def test_kg_path_adds_results(self, setup) -> None:
         retriever, storage, kg = setup
-        from app.memory.models.retrieval import MemoryQuery
         # Query about "prefers" — KG has "user prefers dark mode"
         query = MemoryQuery(query="prefers", conversation_id="conv-2", limit=10)
         results = await retriever.retrieve(query)
@@ -697,7 +692,6 @@ class TestHybridRetrieval:
     @pytest.mark.asyncio
     async def test_procedural_path_included(self, setup) -> None:
         retriever, storage, kg = setup
-        from app.memory.models.retrieval import MemoryQuery
         query = MemoryQuery(query="theme", conversation_id="conv-1", limit=10, include_procedural=True)
         results = await retriever.retrieve(query)
         contents = {r.memory.content for r in results}
@@ -706,7 +700,6 @@ class TestHybridRetrieval:
     @pytest.mark.asyncio
     async def test_preference_boost(self, setup) -> None:
         retriever, storage, kg = setup
-        from app.memory.models.retrieval import MemoryQuery
         retriever._preference_boost = 10.0  # extreme boost for test
         query = MemoryQuery(query="theme", conversation_id="conv-1", limit=10, include_procedural=True)
         results = await retriever.retrieve(query)
@@ -717,7 +710,6 @@ class TestHybridRetrieval:
     @pytest.mark.asyncio
     async def test_retrieve_respects_limit(self, setup) -> None:
         retriever, storage, kg = setup
-        from app.memory.models.retrieval import MemoryQuery
         query = MemoryQuery(query="mode", conversation_id="conv-1", limit=2)
         results = await retriever.retrieve(query)
         assert len(results) <= 2
@@ -731,13 +723,13 @@ class TestHybridRetrieval:
 class TestKGAugmentation:
     @pytest.fixture
     async def retriever_with_kg(self) -> Retriever:
+        from app.memory.knowledge_graph import KnowledgeGraph
+        from app.memory.models.knowledge import KnowledgeTriple
+        from app.memory.models.memory import Memory
         from app.memory.retriever import Retriever
         from app.memory.scorer import Scorer
         from app.memory.storage import MemoryStorage
         from app.memory.vector.sqlite_vector import SQLiteVectorStore
-        from app.memory.models.memory import Memory
-        from app.memory.models.knowledge import KnowledgeTriple
-        from app.memory.knowledge_graph import KnowledgeGraph
 
         store = SQLiteVectorStore()
         storage = MemoryStorage()
@@ -784,7 +776,6 @@ class TestKGAugmentation:
     async def test_kg_brings_related_conversation_memories(
         self, retriever_with_kg: Retriever,
     ) -> None:
-        from app.memory.models.retrieval import MemoryQuery
         results = await retriever_with_kg.retrieve(
             MemoryQuery(query="Alice", limit=10)
         )
@@ -794,7 +785,6 @@ class TestKGAugmentation:
 
     @pytest.mark.asyncio
     async def test_kg_no_match_returns_empty(self, retriever_with_kg: Retriever) -> None:
-        from app.memory.models.retrieval import MemoryQuery
         results = await retriever_with_kg.retrieve(
             MemoryQuery(query="Zebra", limit=10)
         )
@@ -815,7 +805,6 @@ class TestKGAugmentation:
             scorer=Scorer(),
             knowledge_graph=None,
         )
-        from app.memory.models.retrieval import MemoryQuery
         results = await retriever.retrieve(MemoryQuery(query="test", limit=5))
         assert isinstance(results, list)
 

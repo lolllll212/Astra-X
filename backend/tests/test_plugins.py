@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 import pytest
@@ -14,7 +14,6 @@ from app.plugins.example_provider import ExampleProviderPlugin
 from app.plugins.weather import WeatherPlugin, WeatherTool
 from app.tools.capabilities import CapabilityRegistry
 from app.tools.registry import ToolRegistry
-
 
 # =========================================================================
 # Plugin ABC

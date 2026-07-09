@@ -395,8 +395,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.model_selector = model_selector
 
     # Initialise the tool registry and capability registry.
-    from app.tools.registry import ToolRegistry
-    from app.tools.capabilities import CapabilityRegistry
     from app.tools.builtin import (
         CalculatorTool,
         DateTimeTool,
@@ -404,6 +402,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         TextTool,
         UuidTool,
     )
+    from app.tools.capabilities import CapabilityRegistry
+    from app.tools.registry import ToolRegistry
 
     tool_registry = ToolRegistry()
     for builtin_tool_cls in (CalculatorTool, DateTimeTool, JsonTool, TextTool, UuidTool):
