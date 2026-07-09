@@ -23,10 +23,11 @@ class ExampleProviderPlugin(Plugin):
 
     async def on_load(self, context: PluginContext) -> None:
         self._context = context
-        if context.provider_service is None:
+        ps = context.services.provider
+        if ps is None:
             return
 
-        result = await context.provider_service.register(
+        result = await ps.register(
             provider_id="example",
             provider_type=ProviderType.OPENAI_COMPATIBLE,
             display_name="Example Plugin Provider",
@@ -38,7 +39,7 @@ class ExampleProviderPlugin(Plugin):
 
     async def on_unload(self) -> None:
         if self._provider_id is not None and self._context is not None:
-            ps = self._context.provider_service
+            ps = self._context.services.provider
             if ps is not None:
                 try:
                     await ps.remove(self._provider_id)

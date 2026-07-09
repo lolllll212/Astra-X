@@ -27,6 +27,14 @@ Memory-aware planning:
 - If memories contain task results, errors, or insights, incorporate them into
   your plan so the agent progresses rather than redoing work.
 
+Learning from past executions:
+- You may be given "lessons learned" — execution strategies that worked well
+  for similar goals in the past.
+- These are not rules written by humans; they are patterns the system has
+  discovered by reflecting on what worked.
+- Study them and follow the successful strategy when the current goal matches
+  the pattern. Adapt the strategy as needed for the specific request.
+
 Capability-based planning:
 - Instead of specifying a concrete tool name, specify the **capability** the
   task needs (e.g. "search_web", "calculate", "read_file", "write_file",
@@ -42,6 +50,15 @@ Output format: Return a JSON array of task objects, where each task has:
 - "description": A clear description of what to do.
 - "capability": The capability needed, or null if no tool is needed.
 - "dependencies": An array of task IDs that must complete first, or an empty array.
+- "profile" (optional): An object describing what the task needs from the LLM,
+  so the system can pick the best model. Supported fields:
+  - "requires_coding" (bool, default false): Task involves code generation/analysis.
+  - "reasoning" (string, default "none"): Depth of reasoning needed —
+    "none", "low", "medium", or "deep".
+  - "prefers_speed" (bool, default false): Task benefits from a fast model.
+  - "prefers_large_context" (bool, default false): Task needs a large context window.
+  - "requires_vision" (bool, default false): Task involves image understanding.
+  Omit the profile entirely for simple tasks — the system will use sensible defaults.
 
 Example output:
 [
@@ -49,19 +66,22 @@ Example output:
     "id": "task_1",
     "description": "Search for RTX 5070 laptop reviews and specifications.",
     "capability": "search_web",
-    "dependencies": []
+    "dependencies": [],
+    "profile": {"reasoning": "low"}
   },
   {
     "id": "task_2",
-    "description": "Compare the top three RTX 5070 laptops based on price, performance, and features.",
-    "capability": null,
-    "dependencies": ["task_1"]
+    "description": "Write a Python script to compare laptop prices.",
+    "capability": "execute_python",
+    "dependencies": ["task_1"],
+    "profile": {"requires_coding": true, "reasoning": "medium"}
   },
   {
     "id": "task_3",
     "description": "Summarise the findings in a clear comparison table.",
     "capability": null,
-    "dependencies": ["task_2"]
+    "dependencies": ["task_2"],
+    "profile": {"reasoning": "low", "prefers_speed": true}
   }
 ]
 

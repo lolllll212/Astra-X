@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from app.database.models.attachment import AttachmentModel
 from app.database.models.conversation import ConversationModel
+from app.database.models.execution_pattern import ExecutionPatternModel
 from app.database.models.message import MessageModel
 from app.database.models.plugin import (
     PluginConfigModel,
@@ -19,6 +20,7 @@ from app.database.models.usage import UsageModel
 __all__ = [
     "AttachmentModel",
     "ConversationModel",
+    "ExecutionPatternModel",
     "MessageModel",
     "PluginConfigModel",
     "PluginDependencyModel",

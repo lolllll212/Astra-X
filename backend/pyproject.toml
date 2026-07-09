@@ -91,6 +91,7 @@ dev = [
 ]
 
 [project.scripts]
+astra = "app.cli:main"
 eva = "evals.runner:main"
 
 [project.urls]

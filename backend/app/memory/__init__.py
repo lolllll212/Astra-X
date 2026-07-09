@@ -2,6 +2,7 @@ from app.memory.chunker import Chunker
 from app.memory.consolidation import Consolidation
 from app.memory.embedder import Embedder
 from app.memory.forgetting import Forgetting
+from app.memory.fusion import fuse_reciprocal_rank, normalise_rrf
 from app.memory.knowledge_graph import KnowledgeGraph
 from app.memory.manager import MemoryManager
 from app.memory.models.chunk import Chunk, ChunkResult
@@ -26,6 +27,7 @@ __all__ = [
     "Embedding",
     "EmbeddingResult",
     "Forgetting",
+    "fuse_reciprocal_rank",
     "KnowledgeGraph",
     "KnowledgeTriple",
     "Memory",
@@ -34,6 +36,7 @@ __all__ = [
     "MemoryStorage",
     "MemorySummarizer",
     "MemoryType",
+    "normalise_rrf",
     "Reflection",
     "RetrievalResult",
     "Retriever",

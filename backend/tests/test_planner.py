@@ -122,6 +122,45 @@ That should work.""")
         assert plan.tasks[0].capability is None
 
     @pytest.mark.asyncio
+    async def test_plan_task_with_profile(self) -> None:
+        """Task profile is parsed when present in the planner output."""
+        router = _mock_router("""[
+            {
+                "id": "t1",
+                "description": "Write code",
+                "capability": null,
+                "dependencies": [],
+                "profile": {"requires_coding": true, "reasoning": "medium"}
+            }
+        ]""")
+        planner = Planner(llm_router=router)
+        plan = await planner.plan(goal="Code")
+        task = plan.tasks[0]
+        assert task.profile is not None
+        assert task.profile["requires_coding"] is True
+        assert task.profile["reasoning"] == "medium"
+
+    @pytest.mark.asyncio
+    async def test_plan_task_without_profile(self) -> None:
+        """Task profile is None when omitted."""
+        router = _mock_router("""[
+            {"id": "t1", "description": "Simple task", "dependencies": []}
+        ]""")
+        planner = Planner(llm_router=router)
+        plan = await planner.plan(goal="Simple")
+        assert plan.tasks[0].profile is None
+
+    @pytest.mark.asyncio
+    async def test_plan_task_with_non_dict_profile_ignored(self) -> None:
+        """Non-dict profile values are silently ignored."""
+        router = _mock_router("""[
+            {"id": "t1", "description": "Task", "profile": "invalid", "dependencies": []}
+        ]""")
+        planner = Planner(llm_router=router)
+        plan = await planner.plan(goal="Test")
+        assert plan.tasks[0].profile is None
+
+    @pytest.mark.asyncio
     async def test_plan_single_task(self) -> None:
         router = _mock_router("""[
             {"id": "t1", "description": "Do one thing", "capability": null, "dependencies": []}

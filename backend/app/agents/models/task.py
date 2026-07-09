@@ -44,6 +44,14 @@ class Task(BaseModel):
     description: str = Field(min_length=1, description="What to do.")
     status: TaskStatus = Field(default=TaskStatus.PENDING, description="Current status.")
     capability: str | None = Field(default=None, description="Capability needed (e.g. 'search_web').")
+    profile: dict[str, object] | None = Field(
+        default=None,
+        description=(
+            "Capability profile for adaptive model selection. "
+            "Keys: ``requires_coding``, ``reasoning`` (none/low/medium/deep), "
+            "``prefers_speed``, ``prefers_large_context``, ``requires_vision``."
+        ),
+    )
     tool_name: str | None = Field(default=None, description="Resolved tool name (set at execution time).")
     tool_args: dict[str, object] = Field(default_factory=dict, description="Tool arguments.")
     result: str | None = Field(default=None, description="Execution output.")

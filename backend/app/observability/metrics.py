@@ -65,6 +65,77 @@ llm_token_usage_total = Counter(
     registry=metrics_registry,
 )
 
+# -- Agent/Planner metrics --------------------------------------------------
+
+planning_duration = Histogram(
+    name="astra_x_planning_duration_seconds",
+    documentation="Time spent decomposing goals into plans.",
+    buckets=(0.1, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0),
+    registry=metrics_registry,
+)
+
+# -- Tool execution metrics -------------------------------------------------
+
+tool_execution_duration = Histogram(
+    name="astra_x_tool_execution_duration_seconds",
+    documentation="Time spent executing tools, partitioned by tool name and status.",
+    labelnames=["tool_name", "status"],
+    buckets=(0.01, 0.05, 0.1, 0.5, 1.0, 2.5, 5.0, 10.0),
+    registry=metrics_registry,
+)
+
+# -- Memory metrics ---------------------------------------------------------
+
+memory_retrieval_duration = Histogram(
+    name="astra_x_memory_retrieval_duration_seconds",
+    documentation="Time spent retrieving memories from the store.",
+    buckets=(0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5),
+    registry=metrics_registry,
+)
+
+memory_store_duration = Histogram(
+    name="astra_x_memory_store_duration_seconds",
+    documentation="Time spent storing results into memory.",
+    buckets=(0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5),
+    registry=metrics_registry,
+)
+
+# -- Provider latency metrics -----------------------------------------------
+
+provider_request_duration = Histogram(
+    name="astra_x_provider_request_duration_seconds",
+    documentation="LLM provider request latency in seconds, partitioned by provider and model.",
+    labelnames=["provider", "model"],
+    buckets=(0.1, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0),
+    registry=metrics_registry,
+)
+
+provider_request_total = Counter(
+    name="astra_x_provider_requests_total",
+    documentation="Total LLM provider requests, partitioned by provider, model, and result.",
+    labelnames=["provider", "model", "result"],
+    registry=metrics_registry,
+)
+
+# -- Plugin metrics ---------------------------------------------------------
+
+plugin_load_duration = Histogram(
+    name="astra_x_plugin_load_duration_seconds",
+    documentation="Time spent loading plugins, partitioned by plugin name and status.",
+    labelnames=["plugin_name", "status"],
+    buckets=(0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5),
+    registry=metrics_registry,
+)
+
+# -- Reflection metrics -----------------------------------------------------
+
+reflection_outcomes_total = Counter(
+    name="astra_x_reflection_outcomes_total",
+    documentation="Total reflection outcomes, partitioned by decision.",
+    labelnames=["decision"],
+    registry=metrics_registry,
+)
+
 # -- Security metrics -------------------------------------------------------
 
 rate_limit_hits_total = Counter(

@@ -11,7 +11,7 @@ The planner does NOT execute anything — it only produces a plan.
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from app.agents.base import Agent, AgentConfig
@@ -24,6 +24,9 @@ from app.domain.message import Message, TextBlock
 from app.llm.exceptions import GenerationError
 from app.llm.models import CompletionRequest, CompletionResponse, GenerationParams
 from app.llm.router import LLMRouter
+
+if TYPE_CHECKING:
+    from app.llm.model_selector import ModelSelector
 
 logger = get_logger(__name__)
 
@@ -42,15 +45,18 @@ class Planner(Agent):
     def __init__(
         self,
         llm_router: LLMRouter,
+        model_selector: ModelSelector | None = None,
         config: AgentConfig | None = None,
     ) -> None:
         super().__init__(config)
         self._llm_router = llm_router
+        self._model_selector = model_selector
 
     async def plan(
         self,
         goal: str,
         memory_context: str = "",
+        patterns_context: str = "",
     ) -> Plan:
         """Decompose *goal* into a plan using the LLM.
 
@@ -61,6 +67,7 @@ class Planner(Agent):
         Args:
             goal: The user's request.
             memory_context: Relevant memories retrieved for this goal.
+            patterns_context: Lessons learned from past executions.
 
         Returns:
             A validated plan with tasks in execution order.
@@ -68,12 +75,18 @@ class Planner(Agent):
         Raises:
             GenerationError: If the LLM fails to produce a valid plan.
         """
-        messages = self._build_messages(goal, memory_context)
+        messages = self._build_messages(goal, memory_context, patterns_context)
+
+        if self._model_selector is not None:
+            model, provider = await self._model_selector.select_for_planning()
+        else:
+            model = self._config.model
+            provider = self._config.provider
 
         request = CompletionRequest(
             messages=messages,
-            model=self._config.model,
-            provider=self._config.provider,
+            model=model,
+            provider=provider,
             params=GenerationParams(
                 temperature=self._config.temperature,
                 max_tokens=self._config.max_tokens,
@@ -93,7 +106,12 @@ class Planner(Agent):
         )
         return plan
 
-    def _build_messages(self, goal: str, memory_context: str) -> list[Message]:
+    def _build_messages(
+        self,
+        goal: str,
+        memory_context: str,
+        patterns_context: str = "",
+    ) -> list[Message]:
         """Build the message list for the planner LLM call.
 
         Memory context is always prepended so the planner reasons with
@@ -102,14 +120,18 @@ class Planner(Agent):
         Args:
             goal: The user goal.
             memory_context: Relevant memories retrieved for this goal.
+            patterns_context: Lessons learned from past executions.
 
         Returns:
             A list of system and user messages.
         """
+        parts: list[str] = []
         if memory_context:
-            content = f"Relevant memories:\n{memory_context}\n\nGoal: {goal}"
-        else:
-            content = goal
+            parts.append(f"Relevant memories:\n{memory_context}")
+        if patterns_context:
+            parts.append(patterns_context)
+        parts.append(f"Goal: {goal}")
+        content = "\n\n".join(parts)
 
         return [
             Message(
@@ -173,10 +195,14 @@ class Planner(Agent):
 
         tasks: list[Task] = []
         for item in data:
+            profile = item.get("profile")
+            if profile is not None and not isinstance(profile, dict):
+                profile = None
             task = Task(
                 id=item.get("id", str(uuid4())),
                 description=item.get("description", goal),
                 capability=item.get("capability"),
+                profile=profile,
                 dependencies=item.get("dependencies", []),
             )
             tasks.append(task)

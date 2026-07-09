@@ -13,7 +13,7 @@ completes.
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from app.agents.base import Agent, AgentConfig
@@ -27,6 +27,9 @@ from app.domain.message import Message, TextBlock
 from app.llm.exceptions import GenerationError
 from app.llm.models import CompletionRequest, CompletionResponse, GenerationParams
 from app.llm.router import LLMRouter
+
+if TYPE_CHECKING:
+    from app.llm.model_selector import ModelSelector
 
 logger = get_logger(__name__)
 
@@ -49,10 +52,12 @@ class Reflection(Agent):
     def __init__(
         self,
         llm_router: LLMRouter,
+        model_selector: ModelSelector | None = None,
         config: AgentConfig | None = None,
     ) -> None:
         super().__init__(config)
         self._llm_router = llm_router
+        self._model_selector = model_selector
 
     async def reflect(
         self,
@@ -76,10 +81,17 @@ class Reflection(Agent):
             )
 
         messages = self._build_messages(result)
+
+        if self._model_selector is not None:
+            model, provider = await self._model_selector.select_for_reflection()
+        else:
+            model = self._config.model
+            provider = self._config.provider
+
         request = CompletionRequest(
             messages=messages,
-            model=self._config.model,
-            provider=self._config.provider,
+            model=model,
+            provider=provider,
             params=GenerationParams(
                 temperature=0.3,
                 max_tokens=self._config.max_tokens,

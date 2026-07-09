@@ -384,6 +384,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     app.state.llm_router = llm_router
 
+    # Create the adaptive model selector.
+    from app.llm.model_selector import ModelSelector
+
+    model_selector = ModelSelector.from_router(
+        router=llm_router,
+        default_model=settings.default_llm_model,
+        default_provider=settings.default_llm_provider,
+    )
+    app.state.model_selector = model_selector
+
     # Initialise the tool registry and capability registry.
     from app.tools.registry import ToolRegistry
     from app.tools.capabilities import CapabilityRegistry

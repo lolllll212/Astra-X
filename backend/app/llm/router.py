@@ -21,6 +21,7 @@ from collections.abc import AsyncIterator, Sequence
 from app.config.settings import Settings
 from app.core.logging import get_logger
 from app.domain.provider import ProviderSpec
+from app.observability import provider_request_duration, provider_request_total
 from app.domain.stream import StreamEvent
 from app.llm.base import LLMProvider
 from app.llm.exceptions import (
@@ -223,6 +224,11 @@ class LLMRouter:
             except (ProviderTimeoutError, ProviderConnectionError) as exc:
                 last_error = exc
                 self._record_failure(provider.provider_id)
+                provider_request_total.labels(
+                    provider=provider.provider_id,
+                    model=request.model,
+                    result="error",
+                ).inc()
                 logger.warning(
                     "llm.attempt_failed",
                     provider=provider.provider_id,
@@ -239,6 +245,11 @@ class LLMRouter:
             except (GenerationError, ProviderAuthenticationError) as exc:
                 last_error = exc
                 self._record_failure(provider.provider_id)
+                provider_request_total.labels(
+                    provider=provider.provider_id,
+                    model=request.model,
+                    result="error",
+                ).inc()
                 logger.error(
                     "llm.attempt_failed",
                     provider=provider.provider_id,
@@ -342,6 +353,28 @@ class LLMRouter:
             f"Stream failed after {1 + self._max_retries} attempt(s). "
             f"No provider was available.",
         ) from last_error
+
+    def list_providers(self) -> list[LLMProvider]:
+        """Return all registered provider adapters.
+
+        Returns:
+            A list of provider instances from the registry.
+        """
+        return self._registry.list()
+
+    def is_provider_available(self, provider_id: str) -> bool:
+        """Check whether a provider is registered and its circuit isn't open.
+
+        Args:
+            provider_id: The provider identifier to check.
+
+        Returns:
+            ``True`` if the provider is registered and healthy.
+        """
+        return (
+            self._registry.is_registered(provider_id)
+            and not self._is_circuit_open(provider_id)
+        )
 
     async def check_health(
         self,
@@ -524,11 +557,26 @@ class LLMRouter:
             response: The completed response.
             elapsed_ms: Wall-clock time in milliseconds.
         """
+        model_id = response.model or request.model
+        provider_id = provider.provider_id
+        elapsed_sec = elapsed_ms / 1000.0
+
+        provider_request_duration.labels(
+            provider=provider_id,
+            model=model_id,
+        ).observe(elapsed_sec)
+
+        provider_request_total.labels(
+            provider=provider_id,
+            model=model_id,
+            result="success",
+        ).inc()
+
         usage = response.usage
         logger.info(
             "llm.request_complete",
-            provider=provider.provider_id,
-            model=response.model or request.model,
+            provider=provider_id,
+            model=model_id,
             latency_ms=round(elapsed_ms),
             prompt_tokens=usage.prompt_tokens if usage else None,
             completion_tokens=usage.completion_tokens if usage else None,

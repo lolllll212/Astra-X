@@ -66,7 +66,7 @@ class MemoryManager:
         self._summarizer = summarizer
         self._reflection = reflection
         self._knowledge_graph = knowledge_graph
-        self._consolidation = consolidation
+        self._consolidation = consolidation or Consolidation(embedder=embedder)
         self._forgetting = forgetting
 
         self._retriever = retriever or Retriever(
@@ -74,6 +74,7 @@ class MemoryManager:
             embedder=embedder,
             storage=self._storage,
             scorer=self._scorer,
+            knowledge_graph=knowledge_graph,
         )
 
     # -- write -----------------------------------------------------------------

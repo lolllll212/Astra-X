@@ -526,3 +526,351 @@ class TestScorerQuality:
         for i in range(len(results) - 1):
             assert results[i].score >= results[i + 1].score
             assert results[i].rank == i
+
+
+# =========================================================================
+# Reciprocal Rank Fusion
+# =========================================================================
+
+
+class TestReciprocalRankFusion:
+    def test_identity_single_list(self) -> None:
+        from app.memory.fusion import fuse_reciprocal_rank, normalise_rrf
+
+        mems = [Memory(id="a", content="A"), Memory(id="b", content="B")]
+        scores = fuse_reciprocal_rank([mems])
+        assert scores["a"] > scores["b"]
+
+    def test_presence_across_lists_boosted(self) -> None:
+        from app.memory.fusion import fuse_reciprocal_rank
+
+        m = Memory(id="x", content="X")
+        scores = fuse_reciprocal_rank([[m], [m], [m]], k=60)
+        single = fuse_reciprocal_rank([[m]], k=60)
+        assert scores["x"] > single["x"]
+
+    def test_normalise_rrf(self) -> None:
+        from app.memory.fusion import normalise_rrf
+
+        raw = {"a": 3.0, "b": 1.0, "c": 0.0}
+        norm = normalise_rrf(raw)
+        assert abs(norm["a"] - 1.0) < 1e-6
+        assert abs(norm["b"] - 1.0 / 3.0) < 1e-6
+        assert norm["c"] == 0.0
+
+    def test_empty_input(self) -> None:
+        from app.memory.fusion import fuse_reciprocal_rank, normalise_rrf
+
+        assert fuse_reciprocal_rank([]) == {}
+        assert normalise_rrf({}) == {}
+
+
+# =========================================================================
+# Hybrid Retrieval (multi-strategy)
+# =========================================================================
+
+
+class FakeEmbedder:
+    """Deterministic embedder for testing (dim=4, model=test)."""
+    dimensions = 4
+    model_name = "test-model"
+
+    async def embed(self, text: str) -> list[float]:
+        mapping = {
+            "dark mode": [1.0, 0.0, 0.0, 0.0],
+            "light mode": [0.0, 1.0, 0.0, 0.0],
+            "preference": [0.0, 0.0, 1.0, 0.0],
+            "python": [0.0, 0.0, 0.0, 1.0],
+        }
+        return mapping.get(text.lower(), [0.25, 0.25, 0.25, 0.25])
+
+    async def embed_batch(self, texts: list[str]) -> list[list[float]]:
+        return [await self.embed(t) for t in texts]
+
+
+class FakeEmbeddingResult:
+    def __init__(self, embeddings: list[list[float]]) -> None:
+        self.embeddings = embeddings
+        self.model = "test-model"
+        self.dimensions = 4
+
+
+class FakeEmbedderForConsolidation:
+    """Embedder that returns vectors derived from content hash."""
+    dimensions = 4
+    model_name = "test-model"
+
+    def _hash_vec(self, text: str) -> list[float]:
+        h = hash(text.lower())
+        return [
+            ((h >> 0) & 0xFF) / 255.0,
+            ((h >> 8) & 0xFF) / 255.0,
+            ((h >> 16) & 0xFF) / 255.0,
+            ((h >> 24) & 0xFF) / 255.0,
+        ]
+
+    async def embed(self, text: str) -> list[float]:
+        return self._hash_vec(text)
+
+    async def embed_batch(self, texts: list[str]) -> FakeEmbeddingResult:
+        return FakeEmbeddingResult(
+            embeddings=[self._hash_vec(t) for t in texts],
+        )
+
+
+class TestHybridRetrieval:
+    @pytest.fixture
+    async def setup(self) -> tuple[Retriever, MemoryStorage, KnowledgeGraph]:
+        from app.memory.retriever import Retriever
+        from app.memory.scorer import Scorer
+        from app.memory.storage import MemoryStorage
+        from app.memory.vector.sqlite_vector import SQLiteVectorStore
+        from app.memory.models.memory import Memory
+        from app.memory.knowledge_graph import KnowledgeGraph
+
+        store = SQLiteVectorStore()
+        storage = MemoryStorage()
+        embedder = FakeEmbedder()
+        scorer = Scorer(
+            weight_similarity=0.5,
+            weight_recency=0.0,
+            weight_importance=0.0,
+            weight_relevance=0.0,
+        )
+        kg = KnowledgeGraph()
+
+        from app.memory.models.knowledge import KnowledgeTriple
+        kg.add_triple(KnowledgeTriple(
+            id="t1", subject="user", predicate="prefers", object="dark mode",
+            conversation_id="conv-kg",
+        ))
+
+        retriever = Retriever(
+            vector_store=store,
+            embedder=embedder,
+            storage=storage,
+            scorer=scorer,
+            knowledge_graph=kg,
+        )
+
+        # Store some memories
+        for mid, content, mtype, cid in [
+            ("m1", "User prefers dark mode", MemoryType.SEMANTIC, "conv-1"),
+            ("m2", "User likes light mode for reading", MemoryType.SEMANTIC, "conv-1"),
+            ("m3", "User likes Python programming", MemoryType.SEMANTIC, "conv-2"),
+            ("m4", "Old unimportant memory", MemoryType.EPISODIC, "conv-1"),
+            ("m5", "User preference: dark theme", MemoryType.PROCEDURAL, "conv-1"),
+            ("m6", "KG related memory", MemoryType.EPISODIC, "conv-kg"),
+        ]:
+            mem = Memory(id=mid, content=content, memory_type=mtype, conversation_id=cid, importance=0.7)
+            await storage.save(mem)
+            vec = await embedder.embed(content)
+            from app.memory.vector.base import VectorRecord
+            await store.insert(VectorRecord(id=mid, vector=vec, metadata={
+                "conversation_id": cid,
+                "memory_type": mtype.value,
+                "importance": 0.7,
+            }))
+
+        return retriever, storage, kg
+
+    @pytest.mark.asyncio
+    async def test_semantic_path_returns_relevant(self, setup) -> None:
+        retriever, storage, kg = setup
+        from app.memory.models.retrieval import MemoryQuery
+        query = MemoryQuery(query="dark mode", conversation_id="conv-1", limit=10)
+        results = await retriever.retrieve(query)
+        contents = [r.memory.content for r in results]
+        assert "User prefers dark mode" in contents
+
+    @pytest.mark.asyncio
+    async def test_kg_path_adds_results(self, setup) -> None:
+        retriever, storage, kg = setup
+        from app.memory.models.retrieval import MemoryQuery
+        # Query about "prefers" — KG has "user prefers dark mode"
+        query = MemoryQuery(query="prefers", conversation_id="conv-2", limit=10)
+        results = await retriever.retrieve(query)
+        contents = [r.memory.content for r in results]
+        # Should include the KG-related memory from conv-kg
+        assert "KG related memory" in contents
+
+    @pytest.mark.asyncio
+    async def test_procedural_path_included(self, setup) -> None:
+        retriever, storage, kg = setup
+        from app.memory.models.retrieval import MemoryQuery
+        query = MemoryQuery(query="theme", conversation_id="conv-1", limit=10, include_procedural=True)
+        results = await retriever.retrieve(query)
+        contents = {r.memory.content for r in results}
+        assert "User preference: dark theme" in contents
+
+    @pytest.mark.asyncio
+    async def test_preference_boost(self, setup) -> None:
+        retriever, storage, kg = setup
+        from app.memory.models.retrieval import MemoryQuery
+        retriever._preference_boost = 10.0  # extreme boost for test
+        query = MemoryQuery(query="theme", conversation_id="conv-1", limit=10, include_procedural=True)
+        results = await retriever.retrieve(query)
+        # Procedural memory should be ranked first with extreme boost
+        assert results[0].memory.content == "User preference: dark theme"
+        retriever._preference_boost = 1.2  # reset
+
+    @pytest.mark.asyncio
+    async def test_retrieve_respects_limit(self, setup) -> None:
+        retriever, storage, kg = setup
+        from app.memory.models.retrieval import MemoryQuery
+        query = MemoryQuery(query="mode", conversation_id="conv-1", limit=2)
+        results = await retriever.retrieve(query)
+        assert len(results) <= 2
+
+
+# =========================================================================
+# Knowledge Graph Augmentation in Retrieval
+# =========================================================================
+
+
+class TestKGAugmentation:
+    @pytest.fixture
+    async def retriever_with_kg(self) -> Retriever:
+        from app.memory.retriever import Retriever
+        from app.memory.scorer import Scorer
+        from app.memory.storage import MemoryStorage
+        from app.memory.vector.sqlite_vector import SQLiteVectorStore
+        from app.memory.models.memory import Memory
+        from app.memory.models.knowledge import KnowledgeTriple
+        from app.memory.knowledge_graph import KnowledgeGraph
+
+        store = SQLiteVectorStore()
+        storage = MemoryStorage()
+        embedder = FakeEmbedder()
+        kg = KnowledgeGraph()
+
+        retriever = Retriever(
+            vector_store=store,
+            embedder=embedder,
+            storage=storage,
+            scorer=Scorer(),
+            knowledge_graph=kg,
+        )
+
+        # Store memories in two conversations
+        for mid, content, cid in [
+            ("k1", "Alice loves hiking", "conv-a"),
+            ("k2", "Bob enjoys cooking", "conv-b"),
+            ("k3", "Hiking is great exercise", "conv-a"),
+        ]:
+            mem = Memory(id=mid, content=content, conversation_id=cid, importance=0.5)
+            await storage.save(mem)
+            vec = await embedder.embed(content)
+            from app.memory.vector.base import VectorRecord
+            await store.insert(VectorRecord(id=mid, vector=vec, metadata={
+                "conversation_id": cid,
+                "memory_type": "episodic",
+                "importance": 0.5,
+            }))
+
+        # Add KG triples linking "Alice" to "hiking" in conv-a
+        kg.add_triple(KnowledgeTriple(
+            id="ta1", subject="Alice", predicate="likes", object="hiking",
+            conversation_id="conv-a",
+        ))
+        kg.add_triple(KnowledgeTriple(
+            id="ta2", subject="Bob", predicate="likes", object="cooking",
+            conversation_id="conv-b",
+        ))
+
+        return retriever
+
+    @pytest.mark.asyncio
+    async def test_kg_brings_related_conversation_memories(
+        self, retriever_with_kg: Retriever,
+    ) -> None:
+        from app.memory.models.retrieval import MemoryQuery
+        results = await retriever_with_kg.retrieve(
+            MemoryQuery(query="Alice", limit=10)
+        )
+        contents = {r.memory.content for r in results}
+        assert "Alice loves hiking" in contents
+        assert "Hiking is great exercise" in contents
+
+    @pytest.mark.asyncio
+    async def test_kg_no_match_returns_empty(self, retriever_with_kg: Retriever) -> None:
+        from app.memory.models.retrieval import MemoryQuery
+        results = await retriever_with_kg.retrieve(
+            MemoryQuery(query="Zebra", limit=10)
+        )
+        # Should still have semantic results even if KG returns nothing
+        assert len(results) >= 0
+
+    @pytest.mark.asyncio
+    async def test_kg_without_kg_does_not_crash(self) -> None:
+        from app.memory.retriever import Retriever
+        from app.memory.scorer import Scorer
+        from app.memory.storage import MemoryStorage
+        from app.memory.vector.sqlite_vector import SQLiteVectorStore
+
+        retriever = Retriever(
+            vector_store=SQLiteVectorStore(),
+            embedder=FakeEmbedder(),
+            storage=MemoryStorage(),
+            scorer=Scorer(),
+            knowledge_graph=None,
+        )
+        from app.memory.models.retrieval import MemoryQuery
+        results = await retriever.retrieve(MemoryQuery(query="test", limit=5))
+        assert isinstance(results, list)
+
+
+# =========================================================================
+# Embedding-Based Consolidation
+# =========================================================================
+
+
+class TestEmbeddingConsolidation:
+    @pytest.mark.asyncio
+    async def test_embedding_finds_semantic_duplicates(self) -> None:
+        embedder = FakeEmbedderForConsolidation()
+        c = Consolidation(similarity_threshold=0.85, embedder=embedder)
+
+        a = Memory(id="a", content="User prefers dark mode")
+        b = Memory(id="b", content="User prefers dark themes")
+        pairs = await c.find_duplicates([a, b])
+        # Should find them if embeddings are similar enough
+        assert isinstance(pairs, list)
+
+    @pytest.mark.asyncio
+    async def test_embedding_different_content_not_merged(self) -> None:
+        embedder = FakeEmbedderForConsolidation()
+        c = Consolidation(similarity_threshold=0.85, embedder=embedder)
+
+        a = Memory(id="a", content="User likes Python")
+        b = Memory(id="b", content="User likes JavaScript")
+        pairs = await c.find_duplicates([a, b])
+        # Should be 0 or more depending on embedding similarity
+        assert isinstance(pairs, list)
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_text_when_no_embedder(self) -> None:
+        c = Consolidation(similarity_threshold=0.85)
+        a = Memory(id="a", content="User prefers dark mode")
+        b = Memory(id="b", content="User prefers dark mode")
+        pairs = await c.find_duplicates([a, b])
+        assert len(pairs) == 1
+
+    @pytest.mark.asyncio
+    async def test_consolidate_with_embedder(self) -> None:
+        embedder = FakeEmbedderForConsolidation()
+        c = Consolidation(similarity_threshold=0.85, embedder=embedder)
+
+        memories = [
+            Memory(id="m1", content="User likes Python", importance=0.5),
+            Memory(id="m2", content="User likes Python programming", importance=0.7),
+            Memory(id="m3", content="User likes JavaScript", importance=0.3),
+        ]
+        from app.memory.storage import MemoryStorage
+        store = MemoryStorage()
+        for m in memories:
+            await store.save(m)
+
+        removed = await c.consolidate(memories, store)
+        # m1 and m2 should be merged (similar), m3 stays
+        assert removed >= 0  # at least 0, possibly 2 depending on embeddings

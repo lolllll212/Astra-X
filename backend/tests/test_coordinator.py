@@ -151,7 +151,7 @@ class TestCoordinator:
         mm = _mock_memory_manager(context="mem")
         coord = make_coordinator(planner=planner, memory_manager=mm)
         await coord.run(conversation_id="conv1", goal="test")
-        planner.plan.assert_awaited_once_with(goal="test", memory_context="mem")
+        planner.plan.assert_awaited_once_with(goal="test", memory_context="mem", patterns_context="")
 
     @pytest.mark.asyncio
     async def test_run_multi_task_plan(self) -> None:

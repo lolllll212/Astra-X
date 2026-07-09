@@ -2,17 +2,25 @@
 
 Consolidation identifies memories with similar content and merges them
 into a single record with updated importance and metadata.
+
+Two detection strategies are available:
+
+1. **Text-ratio** (default) — uses ``difflib.SequenceMatcher`` ratio.
+2. **Embedding** — uses an ``Embedder`` to compute cosine similarity
+   between memory embeddings for semantic-level duplicate detection.
 """
 
 from __future__ import annotations
 
 import difflib
+import math
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
 from app.core.logging import get_logger
+from app.memory.embedder import Embedder
 from app.memory.models.memory import Memory
 
 logger = get_logger(__name__)
@@ -21,18 +29,39 @@ logger = get_logger(__name__)
 class Consolidation:
     """Finds and merges duplicate or overlapping memories.
 
-    Uses simple text similarity (ratio-based) to identify candidates.
-    Replace with embedding similarity for better accuracy.
+    When an ``embedder`` is provided, duplicate detection uses embedding
+    cosine similarity instead of ``difflib.SequenceMatcher``, catching
+    semantic duplicates (e.g. "User prefers dark mode" == "User likes
+    dark themes").
     """
 
-    def __init__(self, similarity_threshold: float = 0.85) -> None:
+    def __init__(
+        self,
+        similarity_threshold: float = 0.85,
+        embedder: Embedder | None = None,
+    ) -> None:
         self._threshold = similarity_threshold
+        self._embedder = embedder
 
     async def find_duplicates(
         self,
         memories: Sequence[Memory],
     ) -> list[tuple[Memory, Memory, float]]:
-        """Return pairs of memories whose content exceeds the similarity threshold."""
+        """Return pairs of memories whose content exceeds the similarity threshold.
+
+        When an embedder was provided at construction time, uses embedding
+        cosine similarity; otherwise falls back to ``difflib`` ratio.
+        """
+        if self._embedder is not None:
+            return await self._find_duplicates_embedding(memories)
+        return self._find_duplicates_text(memories)
+
+    # -- text-based -----------------------------------------------------------
+
+    def _find_duplicates_text(
+        self,
+        memories: Sequence[Memory],
+    ) -> list[tuple[Memory, Memory, float]]:
         pairs: list[tuple[Memory, Memory, float]] = []
         mems = list(memories)
 
@@ -46,11 +75,36 @@ class Consolidation:
 
         return pairs
 
+    # -- embedding-based ------------------------------------------------------
+
+    async def _find_duplicates_embedding(
+        self,
+        memories: Sequence[Memory],
+    ) -> list[tuple[Memory, Memory, float]]:
+        if self._embedder is None:
+            return self._find_duplicates_text(memories)
+
+        mems = list(memories)
+        texts = [m.content for m in mems]
+        result = await self._embedder.embed_batch(texts)
+        vectors = result.embeddings
+
+        pairs: list[tuple[Memory, Memory, float]] = []
+        for i in range(len(mems)):
+            for j in range(i + 1, len(mems)):
+                sim = self._cosine(vectors[i], vectors[j])
+                if sim >= self._threshold:
+                    pairs.append((mems[i], mems[j], sim))
+
+        return pairs
+
+    # -- merge ----------------------------------------------------------------
+
     async def merge(self, primary: Memory, secondary: Memory) -> Memory:
         """Merge two memories into one, preserving the richer information."""
 
         merged_meta = {**secondary.metadata, **primary.metadata}
-        merged_meta["merged_from"] = [secondary.id]
+        merged_meta["merged_from"] = [*merged_meta.get("merged_from", []), secondary.id]
         merged_meta["merge_timestamp"] = datetime.now(UTC).isoformat()
 
         return Memory(
@@ -105,3 +159,15 @@ class Consolidation:
             )
 
         return len(removed)
+
+    # -- helpers --------------------------------------------------------------
+
+    @staticmethod
+    def _cosine(a: list[float], b: list[float]) -> float:
+        dot = na = nb = 0.0
+        for ai, bi in zip(a, b, strict=False):
+            dot += ai * bi
+            na += ai * ai
+            nb += bi * bi
+        denom = math.sqrt(na) * math.sqrt(nb)
+        return dot / denom if denom > 0 else 0.0

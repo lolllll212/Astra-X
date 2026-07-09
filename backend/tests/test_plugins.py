@@ -9,7 +9,7 @@ import pytest
 
 from app.domain.plugin import PluginSpec
 from app.plugin.manager import PluginManager
-from app.plugins.base import Plugin, PluginContext
+from app.plugins.base import Plugin, PluginContext, PluginRegistries, PluginServices
 from app.plugins.example_provider import ExampleProviderPlugin
 from app.plugins.weather import WeatherPlugin, WeatherTool
 from app.tools.capabilities import CapabilityRegistry
@@ -90,8 +90,10 @@ class TestWeatherPlugin:
     @pytest.fixture
     def context(self, tool_registry: ToolRegistry, capability_registry: CapabilityRegistry) -> PluginContext:
         return PluginContext(
-            tool_registry=tool_registry,
-            capability_registry=capability_registry,
+            registries=PluginRegistries(
+                tool=tool_registry,
+                capability=capability_registry,
+            ),
         )
 
     @pytest.fixture
@@ -166,7 +168,9 @@ class TestExampleProviderPlugin:
 
     @pytest.fixture
     def context(self, mock_provider_service: AsyncMock) -> PluginContext:
-        return PluginContext(provider_service=mock_provider_service)
+        return PluginContext(
+            services=PluginServices(provider=mock_provider_service),
+        )
 
     @pytest.fixture
     def plugin(self) -> ExampleProviderPlugin:

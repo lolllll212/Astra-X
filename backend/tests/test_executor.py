@@ -9,6 +9,7 @@ import pytest
 from app.agents.executor import Executor
 from app.agents.models.task import Task, TaskStatus
 from app.domain.message import Message, TextBlock
+from app.llm.model_selector import CapabilityProfile, ModelSelector
 from app.llm.models import CompletionResponse
 from app.llm.router import LLMRouter
 from app.tools.capabilities import CapabilityRegistry
@@ -157,3 +158,105 @@ class TestExecutor:
         result = await executor.execute(_task(description="Retry me"))
         assert result.status is TaskStatus.COMPLETED
         assert result.output == "retry output"
+
+    # ------------------------------------------------------------------
+    # Profile-based model selection
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_execute_uses_model_selector_when_available(self) -> None:
+        """Executor uses ModelSelector when provided to pick model for LLM tasks."""
+        router = _mock_router("selected result")
+        model_selector = MagicMock(spec=ModelSelector)
+        model_selector.select = AsyncMock(return_value=("deepseek-coder", "ollama"))
+        executor = Executor(llm_router=router, model_selector=model_selector)
+
+        result = await executor.execute(_task(description="Code task"))
+
+        assert result.status is TaskStatus.COMPLETED
+        assert result.output == "selected result"
+        model_selector.select.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_execute_passes_correct_profile_to_selector(self) -> None:
+        """The derived profile is passed to ModelSelector.select()."""
+        router = _mock_router("ok")
+        model_selector = MagicMock(spec=ModelSelector)
+        model_selector.select = AsyncMock(return_value=("llama3.1", "ollama"))
+        executor = Executor(llm_router=router, model_selector=model_selector)
+
+        await executor.execute(_task(
+            description="Implement sorting",
+            capability="execute_python",
+        ))
+
+        call_args = model_selector.select.await_args
+        assert call_args is not None
+        profile: CapabilityProfile = call_args[0][0]
+        assert profile.requires_coding is True
+        assert profile.reasoning == "medium"
+
+    @pytest.mark.asyncio
+    async def test_execute_profile_from_task_profile_dict(self) -> None:
+        """Task profile dict is used directly for model selection."""
+        router = _mock_router("ok")
+        model_selector = MagicMock(spec=ModelSelector)
+        model_selector.select = AsyncMock(return_value=("mistral-nemo", "lm_studio"))
+        executor = Executor(llm_router=router, model_selector=model_selector)
+
+        await executor.execute(_task(
+            description="Analyze large document",
+            profile={"prefers_large_context": True, "reasoning": "deep"},
+        ))
+
+        call_args = model_selector.select.await_args
+        assert call_args is not None
+        profile: CapabilityProfile = call_args[0][0]
+        assert profile.prefers_large_context is True
+        assert profile.reasoning == "deep"
+        assert profile.requires_coding is False
+
+    @pytest.mark.asyncio
+    async def test_execute_without_model_selector_falls_back_to_config(self) -> None:
+        """Executor falls back to AgentConfig when no model_selector is provided."""
+        router = _mock_router("fallback result")
+        executor = Executor(llm_router=router)
+
+        result = await executor.execute(_task(description="Simple task"))
+
+        assert result.status is TaskStatus.COMPLETED
+        assert result.output == "fallback result"
+
+    # ------------------------------------------------------------------
+    # Profile-from-task derivation
+    # ------------------------------------------------------------------
+
+    def test_profile_from_coding_capability(self) -> None:
+        task = _task(capability="write_python_code")
+        profile = Executor._profile_from_task(task)
+        assert profile.requires_coding is True
+        assert profile.reasoning == "medium"
+
+    def test_profile_from_search_capability(self) -> None:
+        task = _task(capability="search_web")
+        profile = Executor._profile_from_task(task)
+        assert profile.requires_coding is False
+        assert profile.prefers_speed is True
+        assert profile.reasoning == "low"
+
+    def test_profile_from_task_profile_dict_overrides(self) -> None:
+        task = _task(
+            description="Generic task",
+            capability=None,
+            profile={"requires_coding": True, "reasoning": "deep"},
+        )
+        profile = Executor._profile_from_task(task)
+        assert profile.requires_coding is True
+        assert profile.reasoning == "deep"
+
+    def test_profile_defaults_when_no_profile_and_no_capability(self) -> None:
+        task = _task(description="Simple")
+        profile = Executor._profile_from_task(task)
+        assert profile.requires_coding is False
+        assert profile.reasoning == "none"
+        assert profile.prefers_speed is False

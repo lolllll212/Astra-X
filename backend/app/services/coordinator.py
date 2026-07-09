@@ -30,6 +30,7 @@ from uuid import uuid4
 
 from app.agents.base import AgentConfig
 from app.agents.executor import Executor as AgentExecutor
+from app.agents.learning_manager import LearningManager
 from app.agents.memory_manager import MemoryManager
 from app.agents.models.execution import ExecutionResult, ReflectionDecision, ReflectionResult
 from app.agents.models.task import Task, TaskStatus
@@ -116,6 +117,7 @@ class ChatCoordinator:
         agent_executor: AgentExecutor | None = None,
         reflection: Reflection | None = None,
         memory_manager: MemoryManager | None = None,
+        learning_manager: LearningManager | None = None,
         capability_registry: CapabilityRegistry | None = None,
         agent_config: AgentConfig | None = None,
     ) -> None:
@@ -126,6 +128,7 @@ class ChatCoordinator:
         self._agent_executor = agent_executor
         self._reflection = reflection
         self._memory_manager = memory_manager
+        self._learning_manager = learning_manager
         self._capability_registry = capability_registry
         self._agent_config = agent_config or AgentConfig()
 
@@ -272,6 +275,11 @@ class ChatCoordinator:
         tracer = get_tracer()
         memory_context: str = ""
 
+        patterns_context = ""
+        if self._learning_manager is not None:
+            with tracer.span("Pattern Retrieval", category="learning"):
+                patterns_context = await self._learning_manager.get_lessons(goal)
+
         with tracer.span("Request", category="chat", conversation_id=conversation.id):
             if self._memory_manager is not None:
                 with tracer.span("Memory Retrieval", category="memory"):
@@ -288,12 +296,13 @@ class ChatCoordinator:
             while iteration < _MAX_AGENT_ITERATIONS:
                 iteration += 1
 
-                # Step 1 — Plan (always uses memory context).
+                # Step 1 — Plan (always uses memory + patterns context).
                 assert self._planner is not None  # guarded by _has_agent_pipeline
                 with tracer.span("Planner", category="agent"):
                     plan = await self._planner.plan(
                         goal=goal,
                         memory_context=memory_context,
+                        patterns_context=patterns_context,
                     )
 
                 yield PlanEvent(
@@ -430,7 +439,17 @@ class ChatCoordinator:
                     if reflection.decision is ReflectionDecision.ACCEPT:
                         break
 
-        # Step 4 — Stream the final answer.
+        # Step 4 — Extract learning pattern if execution was successful.
+        if self._learning_manager is not None and completed_results:
+            with tracer.span("Pattern Extraction", category="learning"):
+                await self._learning_manager.extract_pattern(
+                    goal=goal,
+                    plan=plan,
+                    results=list(completed_results.values()),
+                    reflections=[],
+                )
+
+        # Step 5 — Stream the final answer.
         async for event in self._stream_final_answer(
             goal=goal,
             completed_results=completed_results,

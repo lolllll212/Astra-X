@@ -19,12 +19,14 @@ The coordinator:
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from app.agents.base import AgentConfig
 from app.agents.executor import Executor
+from app.agents.learning_manager import LearningManager
 from app.agents.memory_manager import MemoryManager
 from app.agents.models.execution import ReflectionDecision, ReflectionResult
 from app.agents.models.plan import Plan
@@ -39,8 +41,16 @@ from app.domain.enums import MessageRole
 from app.domain.message import Message, TextBlock
 from app.llm.models import CompletionRequest, CompletionResponse, GenerationParams
 from app.llm.router import LLMRouter
+from app.observability import (
+    memory_retrieval_duration,
+    memory_store_duration,
+    planning_duration,
+    reflection_outcomes_total,
+    tool_execution_duration,
+)
 
 if TYPE_CHECKING:
+    from app.llm.model_selector import ModelSelector
     from app.tools.capabilities import CapabilityRegistry
 
 logger = get_logger(__name__)
@@ -95,6 +105,8 @@ class Coordinator:
         memory_manager: MemoryManager,
         llm_router: LLMRouter,
         capability_registry: CapabilityRegistry | None = None,
+        model_selector: ModelSelector | None = None,
+        learning_manager: LearningManager | None = None,
         config: AgentConfig | None = None,
     ) -> None:
         self._planner = planner
@@ -103,6 +115,8 @@ class Coordinator:
         self._memory_manager = memory_manager
         self._llm_router = llm_router
         self._capability_registry = capability_registry
+        self._model_selector = model_selector
+        self._learning_manager = learning_manager
         self._config = config or AgentConfig()
 
     async def run(
@@ -127,11 +141,19 @@ class Coordinator:
         tracer = get_tracer()
         with tracer.span("Request", category="agent", conversation_id=conversation_id):
             # Load memory context — planner always reasons with memory.
+            _t0 = time.monotonic()
             with tracer.span("Memory Retrieval", category="memory"):
                 state.memory_context = await self._memory_manager.get_context(
                     conversation_id=conversation_id,
                     goal=goal,
                 ) or ""
+            memory_retrieval_duration.observe(time.monotonic() - _t0)
+
+            # Load patterns context from past executions.
+            patterns_context = ""
+            if self._learning_manager is not None:
+                with tracer.span("Pattern Retrieval", category="learning"):
+                    patterns_context = await self._learning_manager.get_lessons(goal)
 
             # Main agent loop.
             while not state.is_exhausted:
@@ -142,12 +164,15 @@ class Coordinator:
                     goal=goal,
                 )
 
-                # Step 1 — Plan (always uses memory context).
+                # Step 1 — Plan (always uses memory + patterns context).
+                _t0 = time.monotonic()
                 with tracer.span("Planner", category="agent"):
                     plan = await self._planner.plan(
                         goal=goal,
                         memory_context=state.memory_context,
+                        patterns_context=patterns_context,
                     )
+                planning_duration.observe(time.monotonic() - _t0)
                 state.plan = plan
                 graph = self._build_graph(plan)
 
@@ -161,38 +186,48 @@ class Coordinator:
                     for task in ready_tasks:
                         graph.update_status(task.id, TaskStatus.RUNNING)
 
+                        _t0 = time.monotonic()
                         with tracer.span(f"Execute {task.id}", category="execution", task_id=task.id):
                             result = await self._executor.execute(task)
                             state.completed_results[result.task_id] = result
+                        tool_execution_duration.labels(
+                            tool_name=result.tool_name or "llm",
+                            status=result.status.value,
+                        ).observe(time.monotonic() - _t0)
 
-                            new_status = (
-                                TaskStatus.COMPLETED
-                                if result.status is TaskStatus.COMPLETED
-                                else TaskStatus.FAILED
-                            )
-                            graph.update_status(task.id, new_status)
+                        new_status = (
+                            TaskStatus.COMPLETED
+                            if result.status is TaskStatus.COMPLETED
+                            else TaskStatus.FAILED
+                        )
+                        graph.update_status(task.id, new_status)
 
-                            # Step 3 — Reflect (before storing so assessment is available).
-                            with tracer.span("Reflection", category="agent"):
-                                assessment = await self._reflection.reflect(result)
+                        # Step 3 — Reflect (before storing so assessment is available).
+                        with tracer.span("Reflection", category="agent"):
+                            assessment = await self._reflection.reflect(result)
+                        reflection_outcomes_total.labels(
+                            decision=assessment.decision.value,
+                        ).inc()
 
-                            # Store in memory with feedback loop + assessment.
-                            with tracer.span("Memory Store", category="memory"):
-                                await self._memory_manager.store_result(
-                                    conversation_id=conversation_id,
-                                    result=result,
-                                    assessment=assessment,
-                                )
-
-                            handled = self._handle_reflection_decision(
-                                decision=assessment.decision,
+                        # Store in memory with feedback loop + assessment.
+                        _t0 = time.monotonic()
+                        with tracer.span("Memory Store", category="memory"):
+                            await self._memory_manager.store_result(
+                                conversation_id=conversation_id,
+                                result=result,
                                 assessment=assessment,
-                                graph=graph,
-                                task=task,
                             )
-                            if handled == "abort":
-                                state.record_error(assessment.reason)
-                                break
+                        memory_store_duration.observe(time.monotonic() - _t0)
+
+                        handled = self._handle_reflection_decision(
+                            decision=assessment.decision,
+                            assessment=assessment,
+                            graph=graph,
+                            task=task,
+                        )
+                        if handled == "abort":
+                            state.record_error(assessment.reason)
+                            break
 
                 state.iteration += 1
 
@@ -201,6 +236,18 @@ class Coordinator:
                     final_assessment = await self._reflect_on_plan(state)
                 if final_assessment.decision is ReflectionDecision.ACCEPT:
                     break
+
+        # Extract learning pattern after successful execution.
+        if self._learning_manager is not None and state.completed_results:
+            with tracer.span("Pattern Extraction", category="learning"):
+                results_list = list(state.completed_results.values())
+                if state.plan is not None:
+                    await self._learning_manager.extract_pattern(
+                        goal=goal,
+                        plan=state.plan,
+                        results=results_list,
+                        reflections=[],
+                    )
 
         # Assemble final answer.
         final_answer = self._assemble_answer(state)
@@ -320,10 +367,16 @@ class Coordinator:
             ),
         ]
 
+        if self._model_selector is not None:
+            model, provider = await self._model_selector.select_for_reflection()
+        else:
+            model = self._config.model
+            provider = self._config.provider
+
         request = CompletionRequest(
             messages=messages,
-            model=self._config.model,
-            provider=self._config.provider,
+            model=model,
+            provider=provider,
             params=GenerationParams(
                 temperature=0.3,
                 max_tokens=512,

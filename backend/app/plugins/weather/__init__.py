@@ -73,17 +73,19 @@ class WeatherPlugin(Plugin):
     async def on_load(self, context: PluginContext) -> None:
         self._context = context
         self._tool = WeatherTool()
-        if context.tool_registry:
-            context.tool_registry.register(self._tool)
-        if context.capability_registry:
-            context.capability_registry.rebuild()
+        tr = context.registries.tool
+        if tr:
+            tr.register(self._tool)
+        cr = context.registries.capability
+        if cr:
+            cr.rebuild()
 
     async def on_unload(self) -> None:
         if self._tool is not None and self._context is not None:
-            tr = self._context.tool_registry
+            tr = self._context.registries.tool
             if tr and tr.exists(self._tool.name):
                 tr.unregister(self._tool.name)
-            cr = self._context.capability_registry
+            cr = self._context.registries.capability
             if cr:
                 cr.rebuild()
         self._tool = None

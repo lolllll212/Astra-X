@@ -15,11 +15,13 @@ loaded, those capabilities are registered with the
 from __future__ import annotations
 
 import importlib
+import time
 from typing import TYPE_CHECKING
 
 from packaging.version import Version
 
 from app.core.logging import get_logger
+from app.observability import plugin_load_duration
 
 if TYPE_CHECKING:
     from app.database.repositories.plugin_repository import PluginRepository
@@ -295,35 +297,56 @@ class PluginManager:
         if not spec.entry_point:
             return None
 
+        _t0 = time.monotonic()
+        status = "success"
+
         try:
             module_path, class_name = spec.entry_point.split(":", 1)
             module = importlib.import_module(module_path)
             plugin_cls = getattr(module, class_name)
         except Exception as exc:
+            status = "import_failed"
             logger.warning(
                 "plugin_manager.import_failed",
                 plugin=spec.name,
                 entry_point=spec.entry_point,
                 error=str(exc),
             )
+            plugin_load_duration.labels(
+                plugin_name=spec.name,
+                status=status,
+            ).observe(time.monotonic() - _t0)
             return None
 
         try:
             plugin = plugin_cls()
         except Exception as exc:
+            status = "instantiate_failed"
             logger.warning(
                 "plugin_manager.instantiate_failed",
                 plugin=spec.name,
                 error=str(exc),
             )
+            plugin_load_duration.labels(
+                plugin_name=spec.name,
+                status=status,
+            ).observe(time.monotonic() - _t0)
             return None
 
-        from app.plugins.base import PluginContext as _PluginContext
+        from app.plugins.base import (
+            PluginContext as _PluginContext,
+            PluginRegistries as _PluginRegistries,
+            PluginServices as _PluginServices,
+        )
 
         context = _PluginContext(
-            tool_registry=self._tool_registry,
-            provider_service=self._provider_service,
-            capability_registry=self._capability_registry,
+            registries=_PluginRegistries(
+                tool=self._tool_registry,
+                capability=self._capability_registry,
+            ),
+            services=_PluginServices(
+                provider=self._provider_service,
+            ),
         )
         try:
             await plugin.on_load(context)
@@ -334,6 +357,11 @@ class PluginManager:
                 error=str(exc),
             )
             return None
+
+        plugin_load_duration.labels(
+            plugin_name=spec.name,
+            status="success",
+        ).observe(time.monotonic() - _t0)
 
         logger.info(
             "plugin_manager.activated",

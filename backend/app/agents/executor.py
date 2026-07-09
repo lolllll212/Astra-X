@@ -20,10 +20,12 @@ from app.agents.prompts.system import AGENT_SYSTEM_PROMPT
 from app.core.logging import get_logger
 from app.domain.enums import MessageRole
 from app.domain.message import Message, TextBlock
+from app.llm.model_selector import CapabilityProfile
 from app.llm.models import CompletionRequest, CompletionResponse, GenerationParams
 from app.llm.router import LLMRouter
 
 if TYPE_CHECKING:
+    from app.llm.model_selector import ModelSelector
     from app.tools.capabilities import CapabilityRegistry
 
 logger = get_logger(__name__)
@@ -39,11 +41,13 @@ class Executor(Agent):
         self,
         llm_router: LLMRouter,
         capability_registry: CapabilityRegistry | None = None,
+        model_selector: ModelSelector | None = None,
         config: AgentConfig | None = None,
     ) -> None:
         super().__init__(config)
         self._llm_router = llm_router
         self._capability_registry = capability_registry
+        self._model_selector = model_selector
 
     async def execute(self, task: Task) -> ExecutionResult:
         """Execute a single task and return the result.
@@ -137,6 +141,10 @@ class Executor(Agent):
     async def _execute_llm(self, task: Task) -> str:
         """Execute a task by generating an LLM response.
 
+        Uses the model selector to choose the best model based on the
+        task's capability profile. Falls back to the agent config when
+        no selector is available.
+
         Args:
             task: The task to execute.
 
@@ -158,10 +166,17 @@ class Executor(Agent):
             ),
         ]
 
+        if self._model_selector is not None:
+            profile = self._profile_from_task(task)
+            model, provider = await self._model_selector.select(profile)
+        else:
+            model = self._config.model
+            provider = self._config.provider
+
         request = CompletionRequest(
             messages=messages,
-            model=self._config.model,
-            provider=self._config.provider,
+            model=model,
+            provider=provider,
             params=GenerationParams(
                 temperature=self._config.temperature,
                 max_tokens=self._config.max_tokens,
@@ -175,6 +190,49 @@ class Executor(Agent):
             if isinstance(block, TextBlock):
                 parts.append(block.text)
         return "".join(parts)
+
+    @staticmethod
+    def _profile_from_task(task: Task) -> CapabilityProfile:
+        """Build a capability profile from a task's profile dict (if set).
+
+        When the task has no explicit profile, derives sensible defaults
+        from the task's capability (e.g. coding-related capabilities map
+        to ``requires_coding=True``).
+
+        Args:
+            task: The task to derive a profile for.
+
+        Returns:
+            A capability profile for model selection.
+        """
+        if task.profile is not None:
+            return CapabilityProfile(
+                requires_coding=bool(task.profile.get("requires_coding", False)),
+                reasoning=str(task.profile.get("reasoning", "none")),
+                prefers_speed=bool(task.profile.get("prefers_speed", False)),
+                prefers_large_context=bool(task.profile.get("prefers_large_context", False)),
+                requires_vision=bool(task.profile.get("requires_vision", False)),
+            )
+
+        cap = (task.capability or "").lower()
+        coding_keywords = (
+            "code", "python", "javascript", "write_file", "execute_python",
+            "implement", "function", "class", "algorithm",
+        )
+        search_keywords = (
+            "search", "fetch", "scrape", "download", "read_file",
+            "list_directory", "search_files",
+        )
+
+        requires_coding = any(kw in cap for kw in coding_keywords)
+        prefers_speed = any(kw in cap for kw in search_keywords)
+        reasoning = "medium" if requires_coding else ("low" if prefers_speed else "none")
+
+        return CapabilityProfile(
+            requires_coding=requires_coding,
+            reasoning=reasoning,
+            prefers_speed=prefers_speed,
+        )
 
     async def _execute_tool(self, task: Task, tool_name: str) -> str:
         """Execute a tool call.
