@@ -1164,7 +1164,7 @@ class TestMetricsRoute:
         app.dependency_overrides[get_conversation_service] = lambda: mock_conv_service
 
         client = TestClient(app)
-        resp = client.get("/metrics")
+        resp = client.get("/metrics/json")
         assert resp.status_code == 200
         data = resp.json()
         assert "uptime_seconds" in data
