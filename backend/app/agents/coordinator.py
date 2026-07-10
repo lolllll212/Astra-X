@@ -35,7 +35,7 @@ from app.agents.plan_simulator import PlanSimulator
 from app.agents.planner import Planner
 from app.agents.reflection import Reflection
 from app.agents.state import AgentState
-from app.agents.task_graph import TaskGraph
+from app.agents.task_graph import ExecutionGraph, TaskGraph
 from app.core.logging import get_logger
 from app.core.tracing import get_tracer
 from app.domain.enums import MessageRole
@@ -161,6 +161,19 @@ class Coordinator:
                 with tracer.span("Pattern Retrieval", category="learning"):
                     patterns_context = await self._learning_manager.get_lessons(goal)
 
+            # Append evidence-based provider recommendations.
+            if self._metrics_tracker is not None:
+                patterns_context += "\n\n"
+                patterns_context += self._metrics_tracker.best_for_profile_with_evidence(
+                    task_type=goal[:60],
+                )
+
+            # Append Experience Graph best workflow.
+            if self._learning_manager is not None:
+                wf = self._learning_manager.best_workflow_for_domain(goal[:60])
+                if wf:
+                    patterns_context += "\n\nBest workflow from experience:\n" + wf
+
             # Main agent loop.
             while not state.is_exhausted:
                 logger.info(
@@ -178,6 +191,41 @@ class Coordinator:
                         memory_context=state.memory_context,
                         patterns_context=patterns_context,
                     )
+
+                # Step 1a — Generate alternative plans and pick the best via simulation.
+                if self._plan_simulator is not None:
+                    plans = [plan]
+                    # Generate 1-2 alternative plans with different temperature.
+                    for alt_temp in (0.5, 0.9):
+                        try:
+                            alt = await self._planner.plan(
+                                goal=goal,
+                                memory_context=state.memory_context,
+                                patterns_context=patterns_context,
+                                temperature=alt_temp,
+                            )
+                            plans.append(alt)
+                        except Exception:
+                            continue
+
+                    best_plan = plan
+                    best_score = -1.0
+                    for candidate in plans:
+                        sim = await self._plan_simulator.simulate(goal, candidate)
+                        score = sim.overall_success_probability * 0.7 + (
+                            1.0 - min(sim.total_estimated_cost_ms / 60000.0, 1.0)
+                        ) * 0.3
+                        if score > best_score:
+                            best_score = score
+                            best_plan = candidate
+
+                    if best_plan is not plan:
+                        logger.info(
+                            "coordinator.plan_selected",
+                            score=round(best_score, 2),
+                        )
+                    plan = best_plan
+
                 planning_duration.observe(time.monotonic() - _t0)
                 state.plan = plan
                 graph = self._build_graph(plan)
@@ -194,7 +242,7 @@ class Coordinator:
                         notes=sim.notes,
                     )
 
-                # Step 2 — Execute tasks.
+                # Step 2 — Execute tasks with retry + checkpoint support.
                 while not graph.is_complete():
                     ready_tasks = graph.get_ready()
                     if not ready_tasks:
@@ -213,12 +261,22 @@ class Coordinator:
                             status=result.status.value,
                         ).observe(time.monotonic() - _t0)
 
-                        new_status = (
-                            TaskStatus.COMPLETED
-                            if result.status is TaskStatus.COMPLETED
-                            else TaskStatus.FAILED
-                        )
-                        graph.update_status(task.id, new_status)
+                        if result.status is TaskStatus.COMPLETED:
+                            graph.update_status(task.id, TaskStatus.COMPLETED)
+                        else:
+                            retry_status = graph.record_failure(
+                                task.id,
+                                error=result.error or "execution failed",
+                            )
+                            if retry_status is TaskStatus.PENDING:
+                                logger.info(
+                                    "coordinator.retry",
+                                    task_id=task.id,
+                                    retry_count=graph._nodes.get(
+                                        task.id, type("", (), {"retry_count": 0})()
+                                    ).retry_count,  # type: ignore
+                                )
+                                continue  # skip reflection; will re-run
 
                         # Step 3 — Reflect (before storing so assessment is available).
                         with tracer.span("Reflection", category="agent"):
@@ -328,33 +386,33 @@ class Coordinator:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _build_graph(plan: Plan) -> TaskGraph:
-        """Build a :class:`TaskGraph` from a plan.
+    def _build_graph(plan: Plan) -> ExecutionGraph:
+        """Build an :class:`ExecutionGraph` from a plan.
 
         Args:
             plan: The plan to convert into a graph.
 
         Returns:
-            A task graph with all tasks and their dependencies.
+            An execution graph with all tasks, dependencies, and retry config.
         """
-        graph = TaskGraph()
+        graph = ExecutionGraph()
         for task in plan.tasks:
-            graph.add_task(task, depends_on=task.dependencies)
+            graph.add_task(task, depends_on=task.dependencies, max_retries=2)
         return graph
 
     @staticmethod
     def _handle_reflection_decision(
         decision: ReflectionDecision,
         assessment: ReflectionResult,
-        graph: TaskGraph,
+        graph: ExecutionGraph,
         task: Task,
     ) -> str:
-        """Handle a reflection decision by mutating the task graph.
+        """Handle a reflection decision by mutating the execution graph.
 
         Args:
             decision: The reflection decision.
             assessment: The full reflection result.
-            graph: The task graph to mutate.
+            graph: The execution graph to mutate.
             task: The task that was reflected on.
 
         Returns:

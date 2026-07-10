@@ -38,6 +38,7 @@ from app.api.routes import (
     attachments_router,
     chat_router,
     conversations_router,
+    dashboard_router,
     health_router,
     metrics_router,
     plugins_router,
@@ -155,6 +156,7 @@ app.add_exception_handler(Exception, unhandled_error_handler)
 app.include_router(health_router, prefix=settings.api_v1_prefix)
 app.include_router(chat_router, prefix=settings.api_v1_prefix)
 app.include_router(conversations_router, prefix=settings.api_v1_prefix)
+app.include_router(dashboard_router, prefix=settings.api_v1_prefix)
 app.include_router(providers_router, prefix=settings.api_v1_prefix)
 app.include_router(plugins_router, prefix=settings.api_v1_prefix)
 app.include_router(attachments_router, prefix=settings.api_v1_prefix)

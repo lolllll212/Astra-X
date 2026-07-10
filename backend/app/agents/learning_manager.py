@@ -13,7 +13,9 @@ from app.core.logging import get_logger
 
 if TYPE_CHECKING:
     from app.database.repositories.pattern_repository import PatternRepository
+    from app.memory.experience_graph import ExperienceGraph
     from app.memory.manager import MemoryManager as CoreMemoryManager
+    from app.memory.world_model import WorldModel
 
 from app.domain.enums import MemoryScope
 from app.memory.models.memory import MemoryType
@@ -31,15 +33,21 @@ class LearningManager:
 
     When a ``memory_manager`` is provided, extracted patterns are also
     persisted as **procedural memories** in the core memory hierarchy.
+    The optional ``world_model`` and ``experience_graph`` enable richer
+    cross-session reasoning.
     """
 
     def __init__(
         self,
         repository: PatternRepository | None = None,
         memory_manager: CoreMemoryManager | None = None,
+        world_model: WorldModel | None = None,
+        experience_graph: ExperienceGraph | None = None,
     ) -> None:
         self._store = LearningStore(repository=repository)
         self._memory_manager = memory_manager
+        self._world_model = world_model
+        self._experience_graph = experience_graph
         # In-memory anti-pattern cache (no DB model yet).
         self._anti_patterns: dict[str, AntiPattern] = {}
 
@@ -102,6 +110,21 @@ class LearningManager:
             r.metadata.get("execution_cost_ms", 0) for r in results
         )
 
+        # Derive preferred provider / model / tool sequence from results.
+        preferred_provider = None
+        preferred_model = None
+        tool_seq = list(dict.fromkeys(
+            r.tool_name for r in results if r.tool_name
+        ))
+
+        for r in results:
+            pp = r.metadata.get("provider_id")
+            pm = r.metadata.get("model_id")
+            if pp:
+                preferred_provider = pp
+            if pm:
+                preferred_model = pm
+
         existing = self._store.get_by_goal_pattern(goal_pattern)
         if existing is not None:
             n = existing.total_count
@@ -120,10 +143,14 @@ class LearningManager:
                 new_plan=plan_tpl,
                 reflections=reflections,
             )
+            merged_tool_seq = list(dict.fromkeys(existing.tool_sequence + tool_seq))
             merged = existing.model_copy(
                 update={
                     "strategy_summary": improved_strategy,
                     "plan_template": improved_plan,
+                    "preferred_provider": preferred_provider or existing.preferred_provider,
+                    "preferred_model": preferred_model or existing.preferred_model,
+                    "tool_sequence": merged_tool_seq,
                     "tags": list(set(existing.tags + tags)),
                     "success_count": existing.success_count + 1,
                     "total_count": n + 1,
@@ -144,6 +171,9 @@ class LearningManager:
                 capability=primary_cap,
                 strategy_summary=strategy,
                 plan_template=plan_tpl,
+                preferred_provider=preferred_provider,
+                preferred_model=preferred_model,
+                tool_sequence=tool_seq,
                 tags=tags,
                 success_count=1,
                 total_count=1,
@@ -185,6 +215,19 @@ class LearningManager:
                     "tags": saved.tags,
                     "source": "learning_manager",
                 },
+            )
+
+        # Record in the Experience Graph for trajectory-level queries.
+        if self._experience_graph is not None and plan.tasks:
+            self._experience_graph.record(
+                goal=goal,
+                goal_domain=classify_goal(goal).value,
+                plan=plan,
+                results=results,
+                reflections=reflections,
+                provider_id=preferred_provider or "",
+                model_id=preferred_model or "",
+                overall_decision="accept" if avg_conf >= 0.5 else "retry",
             )
 
         logger.info(
@@ -289,6 +332,12 @@ class LearningManager:
                 lines.append(f"   Success: {p.success_count}/{p.total_count} ({success_rate:.0%})")
                 lines.append(f"   Confidence: {p.last_reflection_confidence:.2f}")
                 lines.append(f"   Avg cost: {cost_s:.1f}s")
+                if p.preferred_provider:
+                    lines.append(f"   Best provider: {p.preferred_provider}")
+                if p.preferred_model:
+                    lines.append(f"   Best model: {p.preferred_model}")
+                if p.tool_sequence:
+                    lines.append(f"   Tool sequence: {' → '.join(p.tool_sequence)}")
                 if p.tags:
                     lines.append(f"   Tags: {', '.join(p.tags)}")
 
@@ -444,8 +493,6 @@ class LearningManager:
             return None
         if not new_plan:
             return existing_plan
-        if not existing_plan:
-            return new_plan
 
         success_reflections = [
             r for r in reflections if r.decision.value == "accept" and r.confidence > 0.7
@@ -454,3 +501,75 @@ class LearningManager:
             return new_plan
 
         return existing_plan
+
+    # ------------------------------------------------------------------
+    # Experience Graph shortcuts
+    # ------------------------------------------------------------------
+
+    def best_workflow_for_domain(self, domain: str) -> str:
+        """Return a human-readable best-workflow summary from the
+        :class:`ExperienceGraph`, or an empty string if unavailable."""
+        if self._experience_graph is None:
+            return ""
+        result = self._experience_graph.best_workflow_for_domain(domain)
+        if not result:
+            return ""
+        lines = [
+            f"Domain: {result['domain']}",
+            f"Successful runs: {result['total_trajectories']}",
+            f"Avg success rate: {result['avg_success_rate']:.0%}",
+        ]
+        if result.get("most_common_plan"):
+            lines.append(f"Most common plan: {result['most_common_plan']}")
+        if result.get("most_common_provider"):
+            lines.append(f"Preferred provider: {result['most_common_provider']}")
+        return "\n".join(lines)
+
+    # ------------------------------------------------------------------
+    # Eval feedback bridge helpers
+    # ------------------------------------------------------------------
+
+    def get_patterns_for_domain(self, domain: str) -> list[ExecutionPattern]:
+        """Return all cached patterns that match a domain."""
+        all_patterns = self._store.search("", limit=999, domain=GoalDomain(domain))
+        return all_patterns
+
+    def get_weights_for_domain(self, domain: str) -> dict[str, float]:
+        """Return the current ranking weights for a domain."""
+        from app.agents.learning_store import DOMAIN_WEIGHTS
+
+        try:
+            d = GoalDomain(domain)
+        except ValueError:
+            d = GoalDomain.GENERAL
+        return dict(DOMAIN_WEIGHTS.get(d, {}))
+
+    def adjust_weights(self, domain: str, delta: dict[str, float]) -> None:
+        """Apply a delta adjustment to per-domain ranking weights.
+
+        Args:
+            domain: The domain key (e.g. ``"coding"``).
+            delta: Weight adjustments, e.g. ``{"success_rate": 0.015}``.
+        """
+        from app.agents.learning_store import DOMAIN_WEIGHTS
+
+        try:
+            d = GoalDomain(domain)
+        except ValueError:
+            d = GoalDomain.GENERAL
+
+        weights = DOMAIN_WEIGHTS.get(d)
+        if weights is None:
+            return
+
+        for key, adjustment in delta.items():
+            if key in weights:
+                new_val = weights[key] + adjustment
+                weights[key] = max(0.0, min(1.0, new_val))
+
+        logger.info(
+            "learning_manager.weights_adjusted",
+            domain=domain,
+            delta=delta,
+            new_weights=weights,
+        )

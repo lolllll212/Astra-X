@@ -204,6 +204,56 @@ class ProviderMetricsTracker:
         candidates.sort(key=lambda x: -x[0])
         return candidates[0][1], candidates[0][2]
 
+    def best_for_profile_with_evidence(
+        self,
+        *,
+        task_type: str = "generic",
+        min_success_rate: float = 0.7,
+    ) -> str:
+        """Return a human-readable evidence string with percentages.
+
+        Example output::
+
+            "DeepSeek Flash → Coding → 98% success, 1.2s avg latency"
+        """
+        candidates: list[tuple[float, str, str, ProviderStats]] = []
+
+        for provider_id, models in self._observations.items():
+            for model_id, bucket in models.items():
+                stats = self.get_stats(provider_id, model_id)
+                if stats is None or stats.success_rate < min_success_rate:
+                    continue
+                score = stats.success_rate * (1.0 + stats.avg_reflection_confidence * 0.3)
+                candidates.append((score, provider_id, model_id, stats))
+
+        if not candidates:
+            return f"No historical data for '{task_type}'. Using default selection."
+
+        candidates.sort(key=lambda x: -x[0])
+
+        lines: list[str] = []
+        for score, provider_id, model_id, stats in candidates[:5]:
+            pct = stats.success_rate * 100.0
+            lat = round(stats.avg_latency_ms, 1)
+            conf = round(stats.avg_reflection_confidence, 2)
+            n = stats.total_calls
+            lines.append(
+                f"  {provider_id} / {model_id} → {pct:.0f}% success "
+                f"(n={n}, latency={lat}ms, confidence={conf})"
+            )
+
+        if candidates:
+            best = candidates[0]
+            lines.insert(
+                0,
+                f"Recommended for '{task_type}': "
+                f"{best[1]} / {best[2]} "
+                f"({best[3].success_rate * 100:.0f}% success, "
+                f"{round(best[3].avg_latency_ms, 1)}ms avg latency)",
+            )
+
+        return "\n".join(lines)
+
     def list_all_stats(self) -> list[ProviderStats]:
         """Return aggregated stats for all observed (provider, model) pairs."""
         result: list[ProviderStats] = []

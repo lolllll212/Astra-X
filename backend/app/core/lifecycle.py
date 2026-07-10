@@ -394,6 +394,23 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     )
     app.state.model_selector = model_selector
 
+    # Create the global learning store and metrics tracker for dashboard.
+    from app.agents.learning_store import LearningStore
+    from app.database.repositories.pattern_repository import PatternRepository
+    from app.llm.provider_metrics import ProviderMetricsTracker
+
+    app.state.learning_store = LearningStore()
+    app.state.metrics_tracker = ProviderMetricsTracker()
+    try:
+        session_factory = create_session_factory(engine)
+        async with session_context(session_factory) as db_session:
+            repo = PatternRepository(db_session)
+            store = LearningStore(repo)
+            await store.load_all()
+            app.state.learning_store = store
+    except Exception:
+        logger.info("startup.learning_store_no_db_fallback")
+
     # Initialise the tool registry and capability registry.
     from app.tools.builtin import (
         CalculatorTool,

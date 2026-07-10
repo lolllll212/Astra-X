@@ -57,6 +57,7 @@ class Planner(Agent):
         goal: str,
         memory_context: str = "",
         patterns_context: str = "",
+        temperature: float | None = None,
     ) -> Plan:
         """Decompose *goal* into a plan using the LLM.
 
@@ -68,6 +69,8 @@ class Planner(Agent):
             goal: The user's request.
             memory_context: Relevant memories retrieved for this goal.
             patterns_context: Lessons learned from past executions.
+            temperature: Optional override for generation temperature
+                (used for generating alternative plan variants).
 
         Returns:
             A validated plan with tasks in execution order.
@@ -88,7 +91,7 @@ class Planner(Agent):
             model=model,
             provider=provider,
             params=GenerationParams(
-                temperature=self._config.temperature,
+                temperature=temperature if temperature is not None else self._config.temperature,
                 max_tokens=self._config.max_tokens,
             ),
         )

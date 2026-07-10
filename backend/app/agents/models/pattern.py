@@ -74,6 +74,18 @@ class ExecutionPattern(BaseModel):
         default=None,
         description="The task sequence as a newline-separated list of descriptions.",
     )
+    preferred_provider: str | None = Field(
+        default=None,
+        description="Provider that worked best for this pattern (e.g. 'ollama', 'openai').",
+    )
+    preferred_model: str | None = Field(
+        default=None,
+        description="Model that worked best for this pattern (e.g. 'llama3.1', 'gpt-4').",
+    )
+    tool_sequence: list[str] = Field(
+        default_factory=list,
+        description="Ordered list of tools used, e.g. ['search_web', 'scrape_web', 'execute_python'].",
+    )
     tags: list[str] = Field(
         default_factory=list,
         description="Keywords for matching against new goals.",
