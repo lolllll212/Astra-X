@@ -259,6 +259,23 @@ class Coordinator:
                             graph=graph,
                             task=task,
                         )
+
+                        # Record anti-pattern on failure.
+                        if (
+                            self._learning_manager is not None
+                            and result.status is TaskStatus.FAILED
+                        ):
+                            warning = (
+                                f"Avoid {task.capability or 'this approach'} "
+                                f"for '{task.description[:80]}' — "
+                                f"{assessment.reason or result.error or 'failed'}"
+                            )
+                            self._learning_manager.record_failure(
+                                goal=goal,
+                                warning=warning,
+                                failure_reason=result.error or assessment.reason or "unknown",
+                            )
+
                         if handled == "abort":
                             state.record_error(assessment.reason)
                             break

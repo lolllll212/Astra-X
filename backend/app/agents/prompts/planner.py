@@ -28,12 +28,16 @@ Memory-aware planning:
   your plan so the agent progresses rather than redoing work.
 
 Learning from past executions:
-- You may be given "lessons learned" — execution strategies that worked well
-  for similar goals in the past.
-- These are not rules written by humans; they are patterns the system has
-  discovered by reflecting on what worked.
-- Study them and follow the successful strategy when the current goal matches
-  the pattern. Adapt the strategy as needed for the specific request.
+- You may be given one or more "lessons learned" sections.
+- **Recommended task sequence**: If a recommended plan is provided, it describes
+  a task ordering that worked well for a similar goal. Follow it closely,
+  adapting only the specifics (e.g., search terms, code details) for the
+  current request.
+- **Patterns**: These are execution strategies that worked well for similar goals.
+  Study the strategy and adapt it to the current request.
+- **Warnings**: If "Warnings — approaches that have failed before" is present,
+  you MUST avoid the described approaches. These are anti-patterns learned
+  from past failures.
 
 Capability-based planning:
 - Instead of specifying a concrete tool name, specify the **capability** the

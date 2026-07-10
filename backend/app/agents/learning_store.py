@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 import re
 from datetime import datetime, timezone
+from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from app.agents.models.pattern import ExecutionPattern
@@ -13,15 +14,128 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
-# Default ranking weights — can be overridden per-instance.
-# Each weight corresponds to a scoring factor (see _rank_score docstring).
-RANK_WEIGHTS: dict[str, float] = {
-    "similarity": 0.30,
-    "success_rate": 0.25,
-    "recency": 0.20,
-    "cost": 0.10,
-    "confidence": 0.15,
+# ---------------------------------------------------------------------------
+# Goal domain classification
+# ---------------------------------------------------------------------------
+
+
+class GoalDomain(StrEnum):
+    CODING = "coding"
+    RESEARCH = "research"
+    REASONING = "reasoning"
+    VISION = "vision"
+    GENERAL = "general"
+
+
+# ---------------------------------------------------------------------------
+# Per-domain weight presets
+# ---------------------------------------------------------------------------
+
+DOMAIN_WEIGHTS: dict[str, dict[str, float]] = {
+    GoalDomain.CODING: {
+        "similarity": 0.20,
+        "success_rate": 0.30,
+        "recency": 0.15,
+        "cost": 0.20,
+        "confidence": 0.15,
+    },
+    GoalDomain.RESEARCH: {
+        "similarity": 0.40,
+        "success_rate": 0.20,
+        "recency": 0.20,
+        "cost": 0.05,
+        "confidence": 0.15,
+    },
+    GoalDomain.REASONING: {
+        "similarity": 0.15,
+        "success_rate": 0.30,
+        "recency": 0.10,
+        "cost": 0.10,
+        "confidence": 0.35,
+    },
+    GoalDomain.VISION: {
+        "similarity": 0.30,
+        "success_rate": 0.25,
+        "recency": 0.10,
+        "cost": 0.10,
+        "confidence": 0.25,
+    },
+    GoalDomain.GENERAL: {
+        "similarity": 0.30,
+        "success_rate": 0.25,
+        "recency": 0.20,
+        "cost": 0.10,
+        "confidence": 0.15,
+    },
 }
+
+# Default (backward-compatible) weights.
+DEFAULT_WEIGHTS: dict[str, float] = dict(DOMAIN_WEIGHTS[GoalDomain.GENERAL])
+
+# Domain-detection keywords.
+_CODING_KEYWORDS: frozenset[str] = frozenset({
+    "code", "api", "app", "function", "class", "test", "debug", "deploy",
+    "database", "sql", "python", "javascript", "typescript", "react",
+    "fastapi", "django", "flask", "docker", "git", "frontend", "backend",
+    "fullstack", "authentication", "authorization", "endpoint", "route",
+    "migration", "schema", "query", "mutation", "graphql", "rest",
+    "sdk", "library", "framework", "build", "compile", "refactor",
+    "implement", "integration", "continuous", "pipeline", "ci", "cd",
+})
+_RESEARCH_KEYWORDS: frozenset[str] = frozenset({
+    "research", "search", "find", "lookup", "investigate", "explore",
+    "survey", "study", "analyze", "compare", "review", "read", "learn",
+    "understand", "what", "why", "how", "when", "where", "who",
+    "explain", "summarize", "overview", "background", "related",
+    "literature", "paper", "article", "documentation", "docs",
+    "tutorial", "guide", "example", "best practice",
+})
+_REASONING_KEYWORDS: frozenset[str] = frozenset({
+    "reason", "logic", "solve", "puzzle", "math", "equation", "proof",
+    "deduce", "infer", "conclude", "think", "plan", "strategy",
+    "optimize", "evaluate", "assess", "decide", "choose", "select",
+    "tradeoff", "budget", "cost", "benefit", "risk", "scenario",
+})
+_VISION_KEYWORDS: frozenset[str] = frozenset({
+    "image", "photo", "picture", "diagram", "chart", "graph", "visual",
+    "vision", "detect", "recognize", "classify", "segment", "ocr",
+    "object", "face", "scene", "caption", "generate image", "draw",
+    "illustration", "screenshot", "ui", "ux", "design", "layout",
+})
+
+
+def classify_goal(goal: str) -> GoalDomain:
+    """Detect the primary domain of a goal based on keyword heuristics."""
+    lower = goal.lower()
+    coding = sum(1 for kw in _CODING_KEYWORDS if kw in lower)
+    research = sum(1 for kw in _RESEARCH_KEYWORDS if kw in lower)
+    reasoning = sum(1 for kw in _REASONING_KEYWORDS if kw in lower)
+    vision = sum(1 for kw in _VISION_KEYWORDS if kw in lower)
+
+    # Weight vision higher since image tasks often also contain research/coding words.
+    if vision >= 1:
+        return GoalDomain.VISION
+    if coding >= 2:
+        return GoalDomain.CODING
+    if research >= 2:
+        return GoalDomain.RESEARCH
+    if reasoning >= 2:
+        return GoalDomain.REASONING
+    # Single-match tiebreaker.
+    scores = {
+        GoalDomain.CODING: coding,
+        GoalDomain.RESEARCH: research,
+        GoalDomain.REASONING: reasoning,
+    }
+    best = max(scores, key=scores.get)
+    if scores[best] >= 1:
+        return best
+    return GoalDomain.GENERAL
+
+
+# ---------------------------------------------------------------------------
+# LearningStore
+# ---------------------------------------------------------------------------
 
 
 class LearningStore:
@@ -30,19 +144,16 @@ class LearningStore:
     Patterns are loaded from the database on startup and kept in memory
     for fast retrieval. Mutations are written through to the database.
 
-    Attributes:
-        rank_weights: Factor weights for the multi-faceted ranking formula.
-                      Keys: similarity, success_rate, recency, cost, confidence.
+    Ranking is domain-adaptive: the :meth:`search` method auto-classifies
+    the goal and uses per-domain weight presets defined in :data:`DOMAIN_WEIGHTS`.
     """
 
     def __init__(
         self,
         repository: PatternRepository | None = None,
-        rank_weights: dict[str, float] | None = None,
     ) -> None:
         self._repo = repository
         self._cache: dict[str, ExecutionPattern] = {}
-        self.rank_weights = {**RANK_WEIGHTS, **(rank_weights or {})}
 
     async def load_all(self) -> int:
         """Load all patterns from the database into the in-memory cache."""
@@ -63,26 +174,37 @@ class LearningStore:
     def get_by_goal_pattern(self, goal_pattern: str) -> ExecutionPattern | None:
         return self._cache.get(goal_pattern)
 
-    def search(self, goal: str, limit: int = 5) -> list[ExecutionPattern]:
-        """Find patterns relevant to *goal* using multi-factor ranking.
+    def search(
+        self,
+        goal: str,
+        limit: int = 5,
+        domain: GoalDomain | None = None,
+    ) -> list[ExecutionPattern]:
+        """Find patterns relevant to *goal* using domain-adaptive ranking.
 
-        Each pattern is scored on five axes:
-          1. **Similarity** — keyword match ratio against goal_pattern/tags/strategy.
-          2. **Success rate** — ratio of successful uses to total uses.
-          3. **Recency** — exponential decay based on days since last success.
-          4. **Cost** — inverse of average execution cost (cheaper is better).
-          5. **Confidence** — most recent reflection confidence.
+        Each pattern is scored on five axes with weights selected based on
+        the goal's domain (auto-detected unless *domain* is provided):
 
-        The final score is the weighted sum of the five factors, configurable
-        via :attr:`rank_weights`. Patterns with zero similarity are excluded.
+        +--------------+---------+-----------+-----------+-------+------------+
+        | Domain       | Similar | Success   | Recency   | Cost  | Confidence |
+        +--------------+---------+-----------+-----------+-------+------------+
+        | Coding       |  0.20   |  0.30     |  0.15     |  0.20 |  0.15      |
+        | Research     |  0.40   |  0.20     |  0.20     |  0.05 |  0.15      |
+        | Reasoning    |  0.15   |  0.30     |  0.10     |  0.10 |  0.35      |
+        | Vision       |  0.30   |  0.25     |  0.10     |  0.10 |  0.25      |
+        | General      |  0.30   |  0.25     |  0.20     |  0.10 |  0.15      |
+        +--------------+---------+-----------+-----------+-------+------------+
         """
+        domain = domain or classify_goal(goal)
+        weights = DOMAIN_WEIGHTS.get(domain, DEFAULT_WEIGHTS)
+
         keywords = self._extract_keywords(goal)
         if not keywords:
             return []
 
         scored: list[tuple[ExecutionPattern, float]] = []
         for pattern in self._cache.values():
-            score = self._rank_score(pattern, keywords)
+            score = self._rank_score(pattern, keywords, weights)
             if score > 0:
                 scored.append((pattern, score))
 
@@ -93,24 +215,28 @@ class LearningStore:
     # Multi-factor ranking
     # ------------------------------------------------------------------
 
-    def _rank_score(self, pattern: ExecutionPattern, keywords: list[str]) -> float:
+    @staticmethod
+    def _rank_score(
+        pattern: ExecutionPattern,
+        keywords: list[str],
+        weights: dict[str, float],
+    ) -> float:
         """Compute the combined ranking score for *pattern* against *keywords*."""
-        sim = self._factor_similarity(pattern, keywords)
+        sim = LearningStore._factor_similarity(pattern, keywords)
         if sim == 0:
             return 0.0
 
-        sr = self._factor_success_rate(pattern)
-        rec = self._factor_recency(pattern)
-        cost = self._factor_cost(pattern)
-        conf = self._factor_confidence(pattern)
+        sr = LearningStore._factor_success_rate(pattern)
+        rec = LearningStore._factor_recency(pattern)
+        cost = LearningStore._factor_cost(pattern)
+        conf = LearningStore._factor_confidence(pattern)
 
-        w = self.rank_weights
         return (
-            sim * w.get("similarity", 0.30)
-            + sr * w.get("success_rate", 0.25)
-            + rec * w.get("recency", 0.20)
-            + cost * w.get("cost", 0.10)
-            + conf * w.get("confidence", 0.15)
+            sim * weights.get("similarity", 0.30)
+            + sr * weights.get("success_rate", 0.25)
+            + rec * weights.get("recency", 0.20)
+            + cost * weights.get("cost", 0.10)
+            + conf * weights.get("confidence", 0.15)
         )
 
     @staticmethod
@@ -167,7 +293,7 @@ class LearningStore:
         return pattern.last_reflection_confidence
 
     # ------------------------------------------------------------------
-    # Keyword extraction (unchanged)
+    # Keyword extraction
     # ------------------------------------------------------------------
 
     @staticmethod
@@ -191,3 +317,57 @@ class LearningStore:
         }
         words = re.findall(r"[a-zA-Z]\w+", goal_lower)
         return [w for w in words if w not in stop_words and len(w) > 2]
+
+
+    # ------------------------------------------------------------------
+    # Goal generalization
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def generalize_goal(goal: str) -> str:
+        """Build an abstract template from a concrete goal.
+
+        Detects technology names (frameworks, languages, tools) using a
+        known-entity lexicon and replaces them with ``{technology}``.
+        Also replaces numbers with ``{n}`` and quoted strings with
+        ``{value}``, producing a reusable pattern like
+        ``"build {technology} authentication"``.
+        """
+        lower = goal.lower().strip()
+
+        # Known technology / framework / tool names (lowercase).
+        technologies: frozenset[str] = frozenset({
+            "fastapi", "django", "flask", "express", "spring", "rails",
+            "laravel", "nextjs", "nuxt", "remix", "sveltekit", "astro",
+            "react", "vue", "angular", "svelte", "solid", "jquery",
+            "tailwind", "bootstrap", "materialui", "chakra", "shadcn",
+            "python", "javascript", "typescript", "rust", "go", "golang",
+            "java", "kotlin", "scala", "ruby", "php", "csharp", "c++",
+            "swift", "kotlin", "docker", "kubernetes", "k8s", "aws",
+            "gcp", "azure", "terraform", "ansible", "pulumi",
+            "postgres", "postgresql", "mysql", "sqlite", "mongodb",
+            "redis", "elasticsearch", "kafka", "rabbitmq",
+            "pytorch", "tensorflow", "jax", "langchain", "llamaindex",
+            "openai", "claude", "gemini", "mistral", "llama",
+            "graphql", "rest", "grpc", "websocket",
+            "linux", "ubuntu", "debian", "alpine", "nginx", "apache",
+            "vscode", "neovim", "vim", "emacs", "intellij", "pycharm",
+            "github", "gitlab", "bitbucket", "jira", "confluence",
+        })
+
+        # Sort by length descending so longer names match before substrings.
+        sorted_techs = sorted(technologies, key=len, reverse=True)
+        for tech in sorted_techs:
+            # Use word-boundary replacement so "react" doesn't match "reactive".
+            lower = re.sub(rf"\b{re.escape(tech)}\b", "{technology}", lower)
+
+        # Existing normalizations.
+        lower = re.sub(r'"([^"]*)"', "{value}", lower)
+        lower = re.sub(r"'([^']*)'", "{value}", lower)
+        lower = re.sub(r"\b\d+\b", "{n}", lower)
+        lower = re.sub(r"\b(a|an|the|some|any)\s+", "", lower)
+        lower = re.sub(r"\s+", " ", lower).strip()
+
+        if len(lower) > 200:
+            lower = lower[:200]
+        return lower

@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "last_updated": "2026-07-09T22:00:00Z",
+  "last_updated": "2026-07-09T22:30:00Z",
   "mode": "AEE",
   "health_baseline": {
     "ruff": "pass (pre-existing E501 warnings in coordinator.py only)",
@@ -10,22 +10,55 @@
   },
   "active_features": [
     {
-      "name": "pattern_ranking",
+      "name": "adaptive_ranking",
       "status": "deployed",
-      "description": "Multi-factor ranking (similarity, success_rate, recency, cost, confidence) with configurable weights",
+      "description": "Goal-domain auto-classification (coding/research/reasoning/vision/general) with per-domain weight presets. Coding favors success+ cost; research favors similarity; reasoning favors confidence.",
       "files": [
-        "app/agents/models/pattern.py",
         "app/agents/learning_store.py",
         "app/agents/learning_manager.py",
-        "app/database/models/execution_pattern.py",
-        "app/database/converters/pattern_mapper.py",
+        "app/agents/plan_simulator.py",
         "tests/test_learning_patterns.py"
+      ]
+    },
+    {
+      "name": "pattern_generalization",
+      "status": "deployed",
+      "description": "generalize_goal() replaces known technology names (frameworks, languages, tools) with {technology} placeholder, enabling cross-technology pattern matching.",
+      "files": [
+        "app/agents/learning_store.py",
+        "app/agents/learning_manager.py"
+      ]
+    },
+    {
+      "name": "planner_integration",
+      "status": "deployed",
+      "description": "get_lessons() now includes 'Recommended task sequence' from top pattern before pattern details, plus 'Warnings' section for anti-patterns. Planner prompt updated to follow recommendations directly.",
+      "files": [
+        "app/agents/learning_manager.py",
+        "app/agents/prompts/planner.py"
+      ]
+    },
+    {
+      "name": "negative_learning",
+      "status": "deployed",
+      "description": "AntiPattern model with goal_pattern, warning, failure_reason, suggestion, occurrence_count. record_failure() stores anti-patterns on task failure. get_lessons() retrieves relevant warnings. Coordinator records anti-patterns automatically.",
+      "files": [
+        "app/agents/models/pattern.py",
+        "app/agents/learning_manager.py",
+        "app/agents/coordinator.py"
+      ]
+    },
+    {
+      "name": "pattern_ranking",
+      "status": "deployed",
+      "description": "Multi-factor ranking (similarity, success_rate, recency, cost, confidence)",
+      "files": [
+        "app/agents/learning_store.py"
       ]
     },
     {
       "name": "plan_simulation",
       "status": "deployed",
-      "description": "Heuristic cost/success estimation before execution, integrated into Coordinator",
       "files": [
         "app/agents/plan_simulator.py",
         "app/agents/coordinator.py"
@@ -34,7 +67,6 @@
     {
       "name": "learning_feedback_closed_loop",
       "status": "deployed",
-      "description": "Strategy improvement + plan merging between reflection and pattern storage",
       "files": [
         "app/agents/learning_manager.py",
         "app/agents/state.py",
@@ -44,7 +76,6 @@
     {
       "name": "memory_hierarchy_bridge",
       "status": "deployed",
-      "description": "Patterns bridged into core memory as PROCEDURAL memories (working/episodic/semantic/procedural)",
       "files": [
         "app/agents/learning_manager.py"
       ]
@@ -52,7 +83,6 @@
     {
       "name": "adaptive_provider_selection",
       "status": "deployed",
-      "description": "ProviderMetricsTracker collects latency/tokens/success/confidence; ModelSelector blends capability profile with historical performance",
       "files": [
         "app/llm/provider_metrics.py",
         "app/llm/model_selector.py",
@@ -61,31 +91,46 @@
     },
     {
       "name": "protocol_aware_transport",
-      "status": "deployed",
-      "files": [
-        "app/llm/providers/transport.py",
-        "app/llm/providers/adapters/base.py",
-        "app/llm/providers/adapters/chat_completions.py",
-        "app/llm/providers/adapters/responses_api.py",
-        "app/domain/enums.py",
-        "app/domain/provider.py",
-        "app/llm/factory.py",
-        "app/llm/base.py",
-        "app/llm/providers/openai_compatible.py",
-        "app/llm/providers/lmstudio.py",
-        "app/database/models/provider.py",
-        "app/database/converters/provider_mapper.py",
-        "tests/test_protocol_adapters.py"
-      ]
+      "status": "deployed"
     },
     {
       "name": "autonomous_metrics_format",
-      "status": "deployed",
-      "files": [
-        "app/api/routes/metrics.py",
-        "tests/test_api.py"
-      ]
+      "status": "deployed"
     }
+  ],
+  "backlog": [
+    {
+      "id": 1,
+      "task": "Fix pre-existing mypy strict errors (22 across 8 files)",
+      "priority": "medium",
+      "deferred": true
+    },
+    {
+      "id": 2,
+      "task": "Reduce ruff E501 line-length warnings",
+      "priority": "low",
+      "deferred": true
+    },
+    {
+      "id": 3,
+      "task": "Refactor OllamaProvider to use Transport + ProtocolAdapter",
+      "priority": "low",
+      "deferred": true
+    },
+    {
+      "id": 4,
+      "task": "Persist AntiPattern to DB (currently in-memory only)",
+      "priority": "low",
+      "deferred": true
+    },
+    {
+      "id": 5,
+      "task": "Connect eval framework to learning system (eval → pattern success score → ranking update)",
+      "priority": "low",
+      "deferred": true
+    }
+  ]
+}
   ],
   "backlog": [
     {

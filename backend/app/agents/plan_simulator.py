@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from app.agents.learning_store import LearningStore
+from app.agents.learning_store import GoalDomain, LearningStore, classify_goal
 from app.agents.models.pattern import ExecutionPattern
 from app.agents.models.plan import Plan
 from app.agents.models.task import Task
@@ -114,9 +114,11 @@ class PlanSimulator:
         """Estimate cost and success for a single task."""
         # Try pattern-based estimation first.
         if self._store is not None:
+            domain = classify_goal(goal)
             patterns = self._store.search(
                 f"{goal} {task.description} {task.capability or ''}",
                 limit=3,
+                domain=domain,
             )
             if patterns:
                 return self._estimate_from_patterns(task, patterns)

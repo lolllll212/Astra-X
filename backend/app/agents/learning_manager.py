@@ -4,9 +4,9 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
-from app.agents.learning_store import LearningStore
+from app.agents.learning_store import LearningStore, GoalDomain, classify_goal
 from app.agents.models.execution import ExecutionResult, ReflectionResult
-from app.agents.models.pattern import ExecutionPattern
+from app.agents.models.pattern import AntiPattern, ExecutionPattern
 from app.agents.models.plan import Plan
 from app.agents.models.task import TaskStatus
 from app.core.logging import get_logger
@@ -27,12 +27,10 @@ class LearningManager:
     After a successful agent run, :meth:`extract_pattern` creates or updates
     a pattern capturing what strategy worked. Before a new run,
     :meth:`get_lessons` retrieves relevant patterns formatted for the planner
-    prompt.
+    prompt along with recommended task sequences and anti-pattern warnings.
 
     When a ``memory_manager`` is provided, extracted patterns are also
-    persisted as **procedural memories** in the core memory hierarchy,
-    enabling cross-session retrieval alongside episodic and semantic
-    memories.
+    persisted as **procedural memories** in the core memory hierarchy.
     """
 
     def __init__(
@@ -42,6 +40,8 @@ class LearningManager:
     ) -> None:
         self._store = LearningStore(repository=repository)
         self._memory_manager = memory_manager
+        # In-memory anti-pattern cache (no DB model yet).
+        self._anti_patterns: dict[str, AntiPattern] = {}
 
     async def initialize(self) -> None:
         """Load existing patterns from the database."""
@@ -63,6 +63,10 @@ class LearningManager:
 
         Only extracts if the overall execution was successful (no critical
         failures and average reflection confidence >= 0.5).
+
+        Uses generalised goal templates so patterns match across related
+        tasks (e.g. "build FastAPI auth" and "build Django auth" both
+        match the template "build {technology} auth").
         """
         if not results:
             return None
@@ -81,6 +85,7 @@ class LearningManager:
         if avg_conf < 0.5:
             return None
 
+        # Use generalized goal template for broader matching.
         goal_pattern = self._normalize_goal(goal)
         tags = self._extract_tags(goal)
         caps_used = [
@@ -191,37 +196,140 @@ class LearningManager:
         return saved
 
     # ------------------------------------------------------------------
+    # Negative learning — record and retrieve anti-patterns
+    # ------------------------------------------------------------------
+
+    def record_failure(
+        self,
+        *,
+        goal: str,
+        warning: str,
+        failure_reason: str = "",
+        suggestion: str | None = None,
+    ) -> AntiPattern:
+        """Record an anti-pattern — what to avoid and why.
+
+        If the same *goal_pattern* (normalised) already has an anti-pattern,
+        the occurrence count is incremented and the warning is updated.
+        """
+        goal_pattern = self._normalize_goal(goal)
+
+        existing = self._anti_patterns.get(goal_pattern)
+        if existing is not None:
+            updated = existing.model_copy(
+                update={
+                    "warning": warning,
+                    "occurrence_count": existing.occurrence_count + 1,
+                    "suggestion": suggestion or existing.suggestion,
+                    "last_seen_at": datetime.now(),
+                    "updated_at": datetime.now(),
+                },
+            )
+            self._anti_patterns[goal_pattern] = updated
+            return updated
+
+        ap = AntiPattern(
+            id=str(uuid4()),
+            goal_pattern=goal_pattern,
+            warning=warning,
+            failure_reason=failure_reason,
+            suggestion=suggestion,
+            tags=self._extract_tags(goal),
+            last_seen_at=datetime.now(),
+            created_at=datetime.now(),
+            updated_at=datetime.now(),
+        )
+        self._anti_patterns[goal_pattern] = ap
+        return ap
+
+    # ------------------------------------------------------------------
     # Retrieval — before planning
     # ------------------------------------------------------------------
 
-    async def get_lessons(self, goal: str, max_patterns: int = 3) -> str:
+    async def get_lessons(
+        self,
+        goal: str,
+        max_patterns: int = 3,
+    ) -> str:
         """Format relevant patterns as text for the planner prompt.
 
-        Returns an empty string if no relevant patterns are found.
+        Includes:
+        - Top matching patterns with success rates, confidence, cost.
+        - Recommended task sequence from the best-matching pattern.
+        - Anti-pattern warnings for pitfalls to avoid.
+
+        Returns an empty string if nothing relevant is found.
         """
         patterns = self._store.search(goal, limit=max_patterns)
-        if not patterns:
+        anti_patterns = self._search_anti_patterns(goal)
+
+        if not patterns and not anti_patterns:
             return ""
 
-        lines: list[str] = [
-            "Lessons learned from past executions:",
-        ]
-        for i, p in enumerate(patterns, 1):
-            success_rate = p.success_count / max(p.total_count, 1)
-            cost_s = p.avg_execution_cost_ms / 1000.0
-            lines.append("")
-            lines.append(f"{i}. Pattern: {p.goal_pattern}")
-            lines.append(f"   Strategy: {p.strategy_summary}")
-            lines.append(f"   Success: {p.success_count}/{p.total_count} ({success_rate:.0%})")
-            lines.append(f"   Confidence: {p.last_reflection_confidence:.2f}")
-            lines.append(f"   Avg cost: {cost_s:.1f}s")
-            if p.tags:
-                lines.append(f"   Tags: {', '.join(p.tags)}")
-            if p.plan_template:
-                lines.append("   Plan template:")
-                for line in p.plan_template.strip().split("\n"):
-                    lines.append(f"     {line.strip()}")
+        lines: list[str] = []
+
+        # --- Recommended plan (structured planner hint) ---
+        if patterns:
+            best = patterns[0]
+            if best.plan_template:
+                lines.append("Recommended task sequence (based on past success):")
+                for line in best.plan_template.strip().split("\n"):
+                    lines.append(f"  {line.strip()}")
+                lines.append("")
+
+        # --- Pattern details ---
+        if patterns:
+            lines.append("Lessons learned from past executions:")
+            for i, p in enumerate(patterns, 1):
+                success_rate = p.success_count / max(p.total_count, 1)
+                cost_s = p.avg_execution_cost_ms / 1000.0
+                lines.append("")
+                lines.append(f"{i}. Pattern: {p.goal_pattern}")
+                lines.append(f"   Strategy: {p.strategy_summary}")
+                lines.append(f"   Success: {p.success_count}/{p.total_count} ({success_rate:.0%})")
+                lines.append(f"   Confidence: {p.last_reflection_confidence:.2f}")
+                lines.append(f"   Avg cost: {cost_s:.1f}s")
+                if p.tags:
+                    lines.append(f"   Tags: {', '.join(p.tags)}")
+
+        # --- Anti-pattern warnings ---
+        if anti_patterns:
+            if patterns:
+                lines.append("")
+            lines.append("Warnings — approaches that have failed before:")
+            for i, ap in enumerate(anti_patterns, 1):
+                lines.append(f"  {i}. {ap.warning}")
+                if ap.suggestion:
+                    lines.append(f"     Instead: {ap.suggestion}")
+                lines.append(f"     Occurrences: {ap.occurrence_count}")
+
         return "\n".join(lines)
+
+    def _search_anti_patterns(
+        self,
+        goal: str,
+        limit: int = 3,
+    ) -> list[AntiPattern]:
+        """Find anti-patterns relevant to *goal* via keyword matching."""
+        keywords = LearningStore._extract_keywords(goal)
+        if not keywords:
+            return []
+
+        scored: list[tuple[AntiPattern, float]] = []
+        for ap in self._anti_patterns.values():
+            text = (
+                ap.goal_pattern.lower()
+                + " "
+                + " ".join(ap.tags).lower()
+                + " "
+                + ap.warning.lower()
+            )
+            hits = sum(1 for kw in keywords if kw in text)
+            if hits > 0:
+                scored.append((ap, hits / len(keywords)))
+
+        scored.sort(key=lambda x: -x[1])
+        return [ap for ap, _ in scored[:limit]]
 
     # ------------------------------------------------------------------
     # Internals
@@ -229,23 +337,17 @@ class LearningManager:
 
     @staticmethod
     def _normalize_goal(goal: str) -> str:
-        """Normalize a goal to a reusable pattern string.
+        """Normalize a goal to a reusable, generalised pattern string.
 
-        Replaces specific entities with placeholders:
-        - Numbers → {n}
-        - Quoted strings → {value}
-        - Makes lowercase
+        Delegates to :meth:`LearningStore.generalize_goal` which replaces
+        known technology names with ``{technology}``, numbers with ``{n}``,
+        and quoted strings with ``{value}``.
+
+        Example::
+            "Build FastAPI authentication for 2 users"
+            → "build {technology} authentication for {n} users"
         """
-        import re
-        g = goal.lower().strip()
-        g = re.sub(r'"([^"]*)"', "{value}", g)
-        g = re.sub(r"'([^']*)'", "{value}", g)
-        g = re.sub(r"\b\d+\b", "{n}", g)
-        g = re.sub(r"\b(a|an|the|some|any)\s+", "", g)
-        g = re.sub(r"\s+", " ", g).strip()
-        if len(g) > 200:
-            g = g[:200]
-        return g
+        return LearningStore.generalize_goal(goal)
 
     @staticmethod
     def _extract_tags(goal: str) -> list[str]:

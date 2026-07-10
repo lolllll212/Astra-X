@@ -6,6 +6,41 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field
 
 
+class AntiPattern(BaseModel):
+    """A negative execution pattern — what *not* to do.
+
+    Captures failure modes, tool-specific pitfalls, and approaches that
+    consistently underperform.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    id: str = Field(
+        default_factory=lambda: str(uuid4()),
+        description="UUID primary key.",
+    )
+    goal_pattern: str = Field(
+        min_length=1,
+        description="Normalized goal this anti-pattern applies to.",
+    )
+    warning: str = Field(
+        description="What to avoid and why (e.g. 'Avoid Tool X for large repos — timeouts').",
+    )
+    failure_reason: str = Field(
+        default="",
+        description="Root cause (e.g. 'tool_timeout', 'low_confidence', 'bad_strategy').",
+    )
+    suggestion: str | None = Field(
+        default=None,
+        description="Alternative approach that might work better.",
+    )
+    tags: list[str] = Field(default_factory=list)
+    occurrence_count: int = Field(default=1, ge=1)
+    last_seen_at: datetime | None = Field(default=None)
+    created_at: datetime | None = Field(default=None)
+    updated_at: datetime | None = Field(default=None)
+
+
 class ExecutionPattern(BaseModel):
     """An execution strategy learned from past successful agent runs.
 

@@ -137,23 +137,23 @@ class TestLearningStore:
         assert "the" not in keywords
 
     def test_match_score(self) -> None:
-        store = LearningStore()
         p = ExecutionPattern(
             goal_pattern="research {topic}",
             tags=["research", "web"],
             strategy_summary="Search first, then scrape top results",
         )
-        score = store._rank_score(p, ["research", "python", "web"])
+        weights = {"similarity": 1.0, "success_rate": 0.0, "recency": 0.0, "cost": 0.0, "confidence": 0.0}
+        score = LearningStore._rank_score(p, ["research", "python", "web"], weights)
         assert score > 0
 
     def test_match_score_zero(self) -> None:
-        store = LearningStore()
         p = ExecutionPattern(
             goal_pattern="write code",
             tags=["code"],
             strategy_summary="Write Python code",
         )
-        score = store._rank_score(p, ["cooking", "recipes"])
+        weights = {"similarity": 1.0, "success_rate": 0.0, "recency": 0.0, "cost": 0.0, "confidence": 0.0}
+        score = LearningStore._rank_score(p, ["cooking", "recipes"], weights)
         assert score == 0.0
 
     def test_search_by_keywords(self) -> None:
