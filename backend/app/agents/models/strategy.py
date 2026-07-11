@@ -33,6 +33,9 @@ class Strategy:
     # Warnings — anti-patterns / pitfalls to avoid
     warnings: list[str] = field(default_factory=list)
 
+    # World model state context (entity states, valid transitions)
+    world_context: str = ""
+
     # Metadata
     source_pattern_count: int = 0
     source: str = "strategy_engine"
@@ -78,6 +81,9 @@ def format_strategy_for_prompt(strategy: Strategy) -> str:
         parts.append("Warnings:")
         for w in strategy.warnings:
             parts.append(f"  - {w}")
+
+    if strategy.world_context:
+        parts.append(strategy.world_context)
 
     if strategy.source_pattern_count:
         parts.append(

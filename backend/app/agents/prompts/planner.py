@@ -39,6 +39,25 @@ Learning from past executions:
   you MUST avoid the described approaches. These are anti-patterns learned
   from past failures.
 
+State-aware planning:
+- The system tracks state transitions for entities (projects, repositories, etc.).
+- You will be told the **current state** of relevant entities and their **valid next states**.
+- If a task is meant to change an entity's state, include an ``"intended_transition"``
+  in the task's ``"metadata"`` object:
+
+  .. code-block:: json
+
+    "metadata": {
+      "intended_transition": {
+        "entity_id": "<the entity ID from Entity states above>",
+        "to_state": "<the target state>"
+      }
+    }
+
+- The system applies the transition automatically after the task succeeds.
+- Example: if the project is in ``Dirty`` state and running tests should move it to
+  ``Tests Passing``, include that transition in the testing task's metadata.
+
 Capability-based planning:
 - Instead of specifying a concrete tool name, specify the **capability** the
   task needs (e.g. "search_web", "calculate", "read_file", "write_file",
@@ -63,6 +82,8 @@ Output format: Return a JSON array of task objects, where each task has:
   - "prefers_large_context" (bool, default false): Task needs a large context window.
   - "requires_vision" (bool, default false): Task involves image understanding.
   Omit the profile entirely for simple tasks — the system will use sensible defaults.
+- "metadata" (optional): An object with arbitrary key-value pairs. Use this to
+  declare ``intended_transition`` (see "State-aware planning" above).
 
 Example output:
 [

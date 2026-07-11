@@ -26,13 +26,15 @@ from uuid import uuid4
 
 from app.agents.base import AgentConfig
 from app.agents.executor import Executor
+from app.agents.goal_manager import GoalManager
 from app.agents.learning_manager import LearningManager
 from app.agents.memory_manager import MemoryManager
 from app.agents.models.execution import ReflectionDecision, ReflectionResult
-from app.agents.models.plan import Plan
 from app.agents.models.policy import ExecutionMode, ExecutionPolicy
+from app.agents.models.plan import Plan
 from app.agents.models.strategy import Strategy
 from app.agents.models.task import Task, TaskStatus
+from app.memory.state_machine import build_default_state_machines, StateMachineDefinition
 from app.agents.plan_simulator import PlanSimulator
 from app.agents.planner import Planner
 from app.agents.reflection import Reflection
@@ -80,6 +82,7 @@ class CoordinatorResult:
     iterations: int
     final_decision: ReflectionDecision = ReflectionDecision.ACCEPT
     timeline: str = ""
+    goal_id: str | None = None
 
 
 class Coordinator:
@@ -114,6 +117,7 @@ class Coordinator:
         learning_manager: LearningManager | None = None,
         plan_simulator: PlanSimulator | None = None,
         metrics_tracker: ProviderMetricsTracker | None = None,
+        goal_manager: GoalManager | None = None,
         config: AgentConfig | None = None,
     ) -> None:
         self._planner = planner
@@ -126,6 +130,7 @@ class Coordinator:
         self._learning_manager = learning_manager
         self._plan_simulator = plan_simulator
         self._metrics_tracker = metrics_tracker
+        self._goal_manager = goal_manager
         self._config = config or AgentConfig()
         self._strategy_engine = StrategyEngine(
             learning_manager=learning_manager,
@@ -134,11 +139,19 @@ class Coordinator:
             metrics_tracker=metrics_tracker,
         )
 
+        # Register default state machines on the world model.
+        wm = self._get_world_model()
+        if wm is not None:
+            for sm in build_default_state_machines().values():
+                wm.register_state_machine(sm)
+
     async def run(
         self,
         conversation_id: str,
         goal: str,
         policy: ExecutionPolicy | str | None = None,
+        objective_id: str | None = None,
+        goal_description: str | None = None,
     ) -> CoordinatorResult:
         """Execute the full agent lifecycle for a user goal.
 
@@ -149,6 +162,10 @@ class Coordinator:
                 ``"balanced"``, ``"autonomous"``, ``"research"``,
                 ``"coding"``) or an :class:`ExecutionPolicy` instance.
                 ``None`` defaults to ``balanced``.
+            objective_id: If set, the goal is tracked under this objective
+                in the goal hierarchy (persistent across sessions).
+            goal_description: Human-readable label for the goal node
+                (defaults to *goal* when not set).
 
         Returns:
             The final answer, plan, and execution state.
@@ -159,6 +176,14 @@ class Coordinator:
             resolved_policy = ExecutionMode(policy).policy()
         else:
             resolved_policy = policy
+
+        goal_node_id: str | None = None
+        if self._goal_manager is not None and objective_id is not None:
+            desc = goal_description or goal[:200]
+            goal_node = await self._goal_manager.start_or_resume_goal(
+                objective_id, desc,
+            )
+            goal_node_id = goal_node.id
 
         state = AgentState(
             conversation_id=conversation_id,
@@ -284,6 +309,7 @@ class Coordinator:
 
                         if result.status is TaskStatus.COMPLETED:
                             graph.update_status(task.id, TaskStatus.COMPLETED)
+                            self._apply_intended_transition(task)
                         else:
                             retry_status = graph.record_failure(
                                 task.id,
@@ -339,6 +365,25 @@ class Coordinator:
                                 assessment=assessment,
                             )
                         memory_store_duration.observe(time.monotonic() - _t0)
+
+                        # Log atomic action in the goal hierarchy.
+                        if goal_node_id is not None and self._goal_manager is not None:
+                            latency_ms = (
+                                (result.completed_at - result.started_at).total_seconds() * 1000.0
+                                if result.completed_at and result.started_at
+                                else 0.0
+                            )
+                            await self._goal_manager.record_action(
+                                goal_id=goal_node_id,
+                                task_id=task.id,
+                                tool_name=result.tool_name or task.capability,
+                                description=task.description[:200],
+                                input_summary=task.description[:200],
+                                output_summary=(result.output or "")[:500],
+                                status=result.status.value,
+                                latency_ms=latency_ms,
+                                reflection_confidence=assessment.confidence,
+                            )
 
                         handled = self._handle_reflection_decision(
                             decision=assessment.decision,
@@ -396,6 +441,19 @@ class Coordinator:
 
         # Assemble final answer.
         final_answer = self._assemble_answer(state)
+
+        # Update goal node in the hierarchy.
+        if goal_node_id is not None and self._goal_manager is not None:
+            if state.has_errors:
+                await self._goal_manager.fail_goal(
+                    goal_node_id,
+                    error="; ".join(state.errors) if state.errors else "Unknown error",
+                )
+            else:
+                await self._goal_manager.complete_goal(
+                    goal_node_id,
+                    result_summary=final_answer[:500],
+                )
         logger.info(
             "coordinator.complete",
             iterations=state.iteration,
@@ -414,11 +472,37 @@ class Coordinator:
                 if state.has_errors
                 else ReflectionDecision.ACCEPT
             ),
+            goal_id=goal_node_id,
         )
 
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    def _get_world_model(self):
+        """Access the world model via the learning manager, if available."""
+        if self._learning_manager is not None:
+            return self._learning_manager._world_model
+        return None
+
+    def _apply_intended_transition(self, task: Task) -> None:
+        """Apply the task's ``intended_transition`` metadata, if present."""
+        transition_meta = task.metadata.get("intended_transition")
+        if not transition_meta or not isinstance(transition_meta, dict):
+            return
+        entity_id = transition_meta.get("entity_id")
+        to_state = transition_meta.get("to_state")
+        if not entity_id or not to_state:
+            return
+        wm = self._get_world_model()
+        if wm is None:
+            return
+        wm.transition_entity(
+            entity_id,
+            to_state,
+            trigger=f"task:{task.id}",
+            metadata={"task_description": task.description[:200]},
+        )
 
     @staticmethod
     def _build_graph(plan: Plan) -> ExecutionGraph:

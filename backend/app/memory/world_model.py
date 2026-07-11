@@ -27,6 +27,7 @@ from typing import Any
 from uuid import uuid4
 
 from app.core.logging import get_logger
+from app.memory.state_machine import StateMachineDefinition, StateTransition
 
 logger = get_logger(__name__)
 
@@ -39,6 +40,7 @@ logger = get_logger(__name__)
 class EntityType(StrEnum):
     USER = "user"
     PROJECT = "project"
+    REPOSITORY = "repository"
     FILE = "file"
     TOOL = "tool"
     PROVIDER = "provider"
@@ -120,6 +122,7 @@ class WorldEntity:
         self.name = name
         self.attributes = attributes or {}
         self.state_history: list[EntityState] = []
+        self.transitions: list[StateTransition] = []
         self.created_at = datetime.now(timezone.utc)
 
         if current_state:
@@ -129,14 +132,18 @@ class WorldEntity:
         self,
         state_name: str,
         metadata: dict[str, Any] | None = None,
+        trigger: str = "manual",
     ) -> EntityState:
         """Transition this entity to a new state.
 
-        Appends the state to the history and updates ``current_state``.
+        Appends a :class:`EntityState` to the history, updates
+        ``current_state``, and records a full :class:`StateTransition`
+        with *trigger* and *from_state*.
 
         Args:
             state_name: The new state label.
             metadata: Optional details about this transition.
+            trigger: What caused this transition (e.g. ``"task:run_tests"``).
 
         Returns:
             The newly created EntityState.
@@ -145,9 +152,31 @@ class WorldEntity:
             state_name=state_name,
             metadata=metadata,
         )
+        from_state = self.current_state
         self.state_history.append(state)
         self.attributes["current_state"] = state_name
+
+        self.transitions.append(StateTransition(
+            from_state=from_state,
+            to_state=state_name,
+            timestamp=state.timestamp,
+            trigger=trigger,
+            metadata=metadata or {},
+        ))
         return state
+
+    def get_transition_history(
+        self,
+        limit: int | None = None,
+    ) -> list[StateTransition]:
+        """Return the ordered transition history, newest last.
+
+        Args:
+            limit: Optional max number of recent transitions to return.
+        """
+        if limit is not None:
+            return self.transitions[-limit:]
+        return list(self.transitions)
 
     @property
     def current_state(self) -> str | None:
@@ -247,6 +276,7 @@ class WorldModel:
     def __init__(self) -> None:
         self._entities: dict[str, WorldEntity] = {}
         self._relations: list[WorldRelation] = []
+        self._state_machines: dict[EntityType, StateMachineDefinition] = {}
 
     # -- Entity CRUD ----------------------------------------------------------
 
@@ -402,9 +432,14 @@ class WorldModel:
     ) -> list[dict[str, Any]]:
         """Return a human-readable timeline of state transitions.
 
+        When full :class:`StateTransition` records are available (with
+        trigger info), they are used. Otherwise falls back to inferring
+        the timeline from the ordered state history.
+
         Each entry contains::
 
-            {"from": str | None, "to": str, "at": str, "metadata": dict}
+            {"from": str | None, "to": str, "at": str, "trigger": str,
+             "metadata": dict}
 
         Args:
             entity_id: The entity to query.
@@ -413,9 +448,25 @@ class WorldModel:
             A list of transition dicts in chronological order.
         """
         entity = self._entities.get(entity_id)
-        if entity is None or not entity.state_history:
+        if entity is None:
             return []
 
+        # Prefer full transition records when available.
+        if entity.transitions:
+            return [
+                {
+                    "from": t.from_state,
+                    "to": t.to_state,
+                    "at": t.timestamp.isoformat(),
+                    "trigger": t.trigger,
+                    "metadata": t.metadata,
+                }
+                for t in entity.transitions
+            ]
+
+        # Legacy fallback: infer from state_history.
+        if not entity.state_history:
+            return []
         timeline: list[dict[str, Any]] = []
         prev: str | None = None
         for st in entity.state_history:
@@ -427,6 +478,70 @@ class WorldModel:
             })
             prev = st.state_name
         return timeline
+
+    # -- State machine registration -------------------------------------------
+
+    def register_state_machine(
+        self, definition: StateMachineDefinition,
+    ) -> None:
+        """Register a state machine for an entity type.
+
+        Once registered, :meth:`transition_entity` and
+        :meth:`get_valid_next_states` can enforce transition rules.
+        """
+        self._state_machines[definition.entity_type] = definition
+
+    def get_state_machine(
+        self, entity_type: EntityType,
+    ) -> StateMachineDefinition | None:
+        """Return the registered state machine for *entity_type*, or ``None``."""
+        return self._state_machines.get(entity_type)
+
+    def get_valid_next_states(self, entity_id: str) -> set[str]:
+        """Return the valid next states for an entity, based on its
+        registered state machine. Returns an empty set when no state
+        machine is registered.
+        """
+        entity = self._entities.get(entity_id)
+        if entity is None:
+            return set()
+        sm = self._state_machines.get(entity.entity_type)
+        if sm is None:
+            return set()
+        return sm.get_valid_next_states(entity.current_state)
+
+    def transition_entity(
+        self,
+        entity_id: str,
+        to_state: str,
+        trigger: str = "manual",
+        metadata: dict[str, Any] | None = None,
+    ) -> EntityState | None:
+        """Validate and apply a state transition.
+
+        If a :class:`StateMachineDefinition` is registered for the
+        entity's type, the transition is validated first. Invalid
+        transitions are rejected with a warning.
+
+        Returns:
+            The new :class:`EntityState`, or ``None`` if the entity
+            doesn't exist or the transition is invalid.
+        """
+        entity = self._entities.get(entity_id)
+        if entity is None:
+            return None
+
+        sm = self._state_machines.get(entity.entity_type)
+        if sm is not None and not sm.validate(entity.current_state, to_state):
+            logger.warning(
+                "world_model.invalid_transition",
+                entity_id=entity_id,
+                from_state=entity.current_state,
+                to_state=to_state,
+            )
+            return None
+
+        return entity.set_state(to_state, trigger=trigger, metadata=metadata)
 
     # -- Convenience queries --------------------------------------------------
 
@@ -467,6 +582,9 @@ class WorldModel:
         state = proj.current_state
         if state:
             ctx["current_state"] = state
+            valid = self.get_valid_next_states(proj.id)
+            if valid:
+                ctx["valid_next_states"] = sorted(valid)
             timeline = proj.get_state_history(limit=5)
             if len(timeline) > 1:
                 ctx["state_timeline"] = [
@@ -494,6 +612,16 @@ class WorldModel:
                             "metadata": s.metadata,
                         }
                         for s in e.state_history
+                    ],
+                    "transitions": [
+                        {
+                            "from": t.from_state,
+                            "to": t.to_state,
+                            "at": t.timestamp.isoformat(),
+                            "trigger": t.trigger,
+                            "metadata": t.metadata,
+                        }
+                        for t in e.transitions
                     ],
                 }
                 for eid, e in self._entities.items()

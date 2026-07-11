@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 from app.agents.models.strategy import Strategy
 from app.agents.learning_store import GoalDomain, classify_goal
 from app.core.logging import get_logger
+from app.memory.world_model import EntityType
 
 if TYPE_CHECKING:
     from app.agents.learning_manager import LearningManager
@@ -45,7 +46,7 @@ class StrategyEngine:
         patterns_context = self._load_patterns_context(goal)
         wf = self._load_workflow(domain)
         prov = self._load_provider_recommendation(goal, domain)
-        # world_model = self._load_world_context(goal)
+        world_context = self._load_world_context(goal)
         warnings = self._load_warnings(goal)
 
         # --- Fuse into a single strategy ---
@@ -102,6 +103,7 @@ class StrategyEngine:
             confidence=confidence,
             fallback_provider=fallback_provider,
             fallback_model=fallback_model,
+            world_context=world_context,
             warnings=warnings,
             source_pattern_count=n_patterns,
             source="strategy_engine",
@@ -145,6 +147,24 @@ class StrategyEngine:
             return {}
         provider_id, model_id = result
         return {"provider_id": provider_id, "model_id": model_id}
+
+    def _load_world_context(self, goal: str) -> str:
+        """Load entity states and valid next transitions from the world model."""
+        if self._world_model is None:
+            return ""
+        projects = self._world_model.find_entities(EntityType.PROJECT)
+        lines: list[str] = []
+        for proj in projects:
+            state = proj.current_state
+            if state:
+                valid = self._world_model.get_valid_next_states(proj.id)
+                line = f"  - {proj.name} (id={proj.id}): current_state={state}"
+                if valid:
+                    line += f", valid_next_states={sorted(valid)}"
+                lines.append(line)
+        if not lines:
+            return ""
+        return "Entity states:\n" + "\n".join(lines)
 
     def _load_warnings(self, goal: str) -> list[str]:
         """Load anti-pattern warnings from LearningManager."""

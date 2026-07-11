@@ -209,12 +209,16 @@ class Planner(Agent):
             profile = item.get("profile")
             if profile is not None and not isinstance(profile, dict):
                 profile = None
+            metadata_raw = item.get("metadata")
+            if metadata_raw is not None and not isinstance(metadata_raw, dict):
+                metadata_raw = None
             task = Task(
                 id=item.get("id", str(uuid4())),
                 description=item.get("description", goal),
                 capability=item.get("capability"),
                 profile=profile,
                 dependencies=item.get("dependencies", []),
+                metadata=metadata_raw or {},
             )
             tasks.append(task)
 
