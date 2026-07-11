@@ -242,6 +242,70 @@ class ExperienceGraph:
             "recommended_approach": best_plan.split(" → ") if best_plan else [],
         }
 
+    def provider_domain_stats(
+        self,
+        domain: str | None = None,
+        min_observations: int = 2,
+    ) -> list[dict[str, Any]]:
+        """Return per-provider performance stats aggregated by domain.
+
+        Each result dict contains::
+
+            {
+                "domain": str,
+                "provider_id": str,
+                "model_id": str,
+                "total_runs": int,
+                "successful_runs": int,
+                "success_rate": float,
+                "avg_latency_ms": float,
+                "avg_reflection_confidence": float,
+                "overall_confidence": float,
+            }
+
+        Args:
+            domain: If set, filter to this domain only.
+            min_observations: Minimum runs required to include a row.
+
+        Returns:
+            Sorted list of dicts (highest success rate first).
+        """
+        from collections import defaultdict
+
+        buckets: dict[tuple[str, str, str], list[ExecutionTrajectory]] = (
+            defaultdict(list)
+        )
+
+        for t in self._trajectories.values():
+            if domain and t.goal_domain != domain:
+                continue
+            key = (t.goal_domain, t.provider_id, t.model_id)
+            buckets[key].append(t)
+
+        results: list[dict[str, Any]] = []
+        for (dom, pid, mid), trajs in buckets.items():
+            if len(trajs) < min_observations:
+                continue
+            n = len(trajs)
+            successes = sum(1 for tr in trajs if tr.is_success)
+            latencies = [tr.total_cost_ms for tr in trajs]
+            confs = [tr.overall_confidence for tr in trajs]
+
+            results.append({
+                "domain": dom,
+                "provider_id": pid,
+                "model_id": mid,
+                "total_runs": n,
+                "successful_runs": successes,
+                "success_rate": successes / max(n, 1),
+                "avg_latency_ms": sum(latencies) / n,
+                "avg_reflection_confidence": sum(confs) / n,
+                "overall_confidence": sum(confs) / n,
+            })
+
+        results.sort(key=lambda r: (-r["success_rate"], r["avg_latency_ms"]))
+        return results
+
     # -- Maintenance ----------------------------------------------------------
 
     def clear(self) -> None:

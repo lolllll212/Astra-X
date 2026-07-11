@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 from app.agents.learning_store import GoalDomain, LearningStore, classify_goal
 from app.agents.models.pattern import ExecutionPattern
 from app.agents.models.plan import Plan
+from app.agents.models.strategy import Strategy
 from app.agents.models.task import Task
 from app.core.logging import get_logger
 
@@ -59,12 +60,23 @@ class PlanSimulator:
     ) -> None:
         self._store = learning_store
 
-    async def simulate(self, goal: str, plan: Plan) -> SimulationResult:
+    async def simulate(
+        self,
+        goal: str,
+        plan: Plan,
+        strategy: Strategy | None = None,
+    ) -> SimulationResult:
         """Run a heuristic simulation on *plan*.
+
+        When a :class:`Strategy` is provided, its fused estimates
+        (expected success rate, expected latency, recommended provider
+        and tool sequence) serve as Bayesian priors that enrich the
+        per-task estimates.
 
         Args:
             goal: The original user goal (used for pattern lookup).
             plan: The plan produced by the planner.
+            strategy: Optional structured strategy guidance to inform estimates.
 
         Returns:
             A SimulationResult with per-task estimates and aggregates.
@@ -77,11 +89,22 @@ class PlanSimulator:
                 notes="Empty plan — trivially succeeds at zero cost.",
             )
 
+        # Domain-level priors from the strategy engine.
+        prior_success = strategy.expected_success_rate if strategy else 0.0
+        prior_cost = strategy.expected_latency_ms if strategy else 0.0
+        prior_confidence = strategy.confidence if strategy else 0.0
+        recommended_tools = (
+            set(strategy.recommended_tool_sequence) if strategy else set()
+        )
+
         task_estimates: list[TaskEstimate] = []
         total_pattern_matches = 0
 
         for task in plan.tasks:
-            est = await self._estimate_task(task, goal)
+            est = await self._estimate_task(
+                task, goal, prior_success, prior_cost, prior_confidence,
+                recommended_tools,
+            )
             task_estimates.append(est)
             if est.confidence > 0.5:
                 total_pattern_matches += 1
@@ -91,11 +114,19 @@ class PlanSimulator:
         for e in task_estimates:
             overall_success *= e.success_probability
 
-        # Confidence: ratio of tasks with good pattern data.
+        # Blend with prior if we have one and our estimate is low-confidence.
         n = len(task_estimates)
         confidence = total_pattern_matches / n if n > 0 else 0.0
+        if prior_confidence > confidence and prior_success > 0:
+            overall_success = (
+                overall_success * (1 - prior_confidence)
+                + prior_success * prior_confidence
+            )
+            confidence = prior_confidence
 
         notes = self._build_notes(task_estimates, overall_success, total_cost)
+        if strategy:
+            notes += f" | Strategy priors: {strategy.goal_domain} "
 
         return SimulationResult(
             plan_goal=goal,
@@ -110,9 +141,20 @@ class PlanSimulator:
         self,
         task: Task,
         goal: str,
+        prior_success: float = 0.0,
+        prior_cost: float = 0.0,
+        prior_confidence: float = 0.0,
+        recommended_tools: set[str] | None = None,
     ) -> TaskEstimate:
-        """Estimate cost and success for a single task."""
+        """Estimate cost and success for a single task.
+
+        Uses pattern-based estimation when available, blends with
+        strategy priors, and adjusts for tool-sequence alignment.
+        """
+        recommended_tools = recommended_tools or set()
+
         # Try pattern-based estimation first.
+        est: TaskEstimate | None = None
         if self._store is not None:
             domain = classify_goal(goal)
             patterns = self._store.search(
@@ -121,10 +163,40 @@ class PlanSimulator:
                 domain=domain,
             )
             if patterns:
-                return self._estimate_from_patterns(task, patterns)
+                est = self._estimate_from_patterns(task, patterns)
 
-        # Fallback: heuristic baseline.
-        return self._heuristic_estimate(task)
+        if est is None:
+            est = self._heuristic_estimate(task)
+
+        # Boost confidence/success when task capability matches
+        # the strategy's recommended tool sequence.
+        if recommended_tools and task.capability in recommended_tools:
+            boosted_success = est.success_probability * 1.05
+            est = TaskEstimate(
+                task_id=est.task_id,
+                description=est.description,
+                estimated_cost_ms=est.estimated_cost_ms,
+                success_probability=min(boosted_success, 0.99),
+                confidence=min(est.confidence + 0.15, 1.0),
+            )
+
+        # Blend with domain-level priors when our estimate is weak.
+        if prior_confidence > 0.3 and est.confidence < prior_confidence:
+            blend = prior_confidence * 0.4
+            cost = est.estimated_cost_ms * (1 - blend) + prior_cost * blend
+            success = (
+                est.success_probability * (1 - blend)
+                + prior_success * blend
+            )
+            est = TaskEstimate(
+                task_id=est.task_id,
+                description=est.description,
+                estimated_cost_ms=cost,
+                success_probability=success,
+                confidence=(est.confidence + prior_confidence) / 2,
+            )
+
+        return est
 
     @staticmethod
     def _estimate_from_patterns(

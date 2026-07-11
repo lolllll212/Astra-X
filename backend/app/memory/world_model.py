@@ -61,11 +61,37 @@ class RelationType(StrEnum):
     AVOIDED = "avoided"
     RAN_ON = "ran_on"
     RESULTED_IN = "resulted_in"
+    TRANSITIONED_TO = "transitioned_to"
 
 
 # ---------------------------------------------------------------------------
 # Data models
 # ---------------------------------------------------------------------------
+
+
+class EntityState:
+    """A named state that an entity has transitioned through.
+
+    Attributes:
+        state_name: The state label (e.g. ``"Build Failed"``,
+            ``"Tests Passing"``, ``"Ready For Release"``).
+        timestamp: When this state was entered.
+        metadata: Optional key-value details about this state transition
+            (e.g. ``{"exit_code": 1, "duration_ms": 4500}``).
+    """
+
+    def __init__(
+        self,
+        state_name: str,
+        timestamp: datetime | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        self.state_name = state_name
+        self.timestamp = timestamp or datetime.now(timezone.utc)
+        self.metadata = metadata or {}
+
+    def __repr__(self) -> str:
+        return f"EntityState({self.state_name} @ {self.timestamp.isoformat()})"
 
 
 class WorldEntity:
@@ -76,6 +102,8 @@ class WorldEntity:
         entity_type: The kind of entity.
         name: Human-readable label.
         attributes: Arbitrary key-value metadata (language, path, version, …).
+        current_state: The entity's most recent state (``None`` if never set).
+        state_history: Ordered list of all past states (newest last).
         created_at: When this entity was first observed.
     """
 
@@ -85,18 +113,92 @@ class WorldEntity:
         name: str,
         attributes: dict[str, Any] | None = None,
         entity_id: str | None = None,
+        current_state: str | None = None,
     ) -> None:
         self.id = entity_id or str(uuid4())
         self.entity_type = entity_type
         self.name = name
         self.attributes = attributes or {}
+        self.state_history: list[EntityState] = []
         self.created_at = datetime.now(timezone.utc)
+
+        if current_state:
+            self.set_state(current_state)
+
+    def set_state(
+        self,
+        state_name: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> EntityState:
+        """Transition this entity to a new state.
+
+        Appends the state to the history and updates ``current_state``.
+
+        Args:
+            state_name: The new state label.
+            metadata: Optional details about this transition.
+
+        Returns:
+            The newly created EntityState.
+        """
+        state = EntityState(
+            state_name=state_name,
+            metadata=metadata,
+        )
+        self.state_history.append(state)
+        self.attributes["current_state"] = state_name
+        return state
+
+    @property
+    def current_state(self) -> str | None:
+        """The most recent state, or ``None`` if never set."""
+        if self.state_history:
+            return self.state_history[-1].state_name
+        return None
+
+    def get_state_history(
+        self,
+        limit: int | None = None,
+    ) -> list[EntityState]:
+        """Return the ordered state history, newest last.
+
+        Args:
+            limit: Optional max number of recent states to return.
+
+        Returns:
+            A list of EntityState instances.
+        """
+        if limit is not None:
+            return self.state_history[-limit:]
+        return list(self.state_history)
+
+    def get_state_at(
+        self,
+        timestamp: datetime,
+    ) -> EntityState | None:
+        """Return the state that was active at *timestamp*.
+
+        Args:
+            timestamp: The point in time to query.
+
+        Returns:
+            The state active at that time, or ``None`` if the entity
+            had no state at that point.
+        """
+        active: EntityState | None = None
+        for s in self.state_history:
+            if s.timestamp <= timestamp:
+                active = s
+            else:
+                break
+        return active
 
     def to_triple_subject(self) -> str:
         return f"{self.entity_type.value}:{self.id}"
 
     def __repr__(self) -> str:
-        return f"WorldEntity({self.entity_type}:{self.name})"
+        state = f" [{self.current_state}]" if self.current_state else ""
+        return f"WorldEntity({self.entity_type}:{self.name}{state})"
 
 
 class WorldRelation:
@@ -251,11 +353,90 @@ class WorldModel:
 
         return neighbors
 
+    # -- State queries --------------------------------------------------------
+
+    def find_entities_by_state(
+        self,
+        state_name: str,
+        entity_type: EntityType | None = None,
+    ) -> list[WorldEntity]:
+        """Find all entities currently in *state_name*.
+
+        Args:
+            state_name: The state to match (e.g. ``"Tests Passing"``).
+            entity_type: Optional filter to a specific entity type.
+
+        Returns:
+            A list of matching entities.
+        """
+        results: list[WorldEntity] = []
+        for e in self._entities.values():
+            if e.current_state == state_name:
+                if entity_type is None or e.entity_type == entity_type:
+                    results.append(e)
+        return results
+
+    def get_entity_state_history(
+        self,
+        entity_id: str,
+        limit: int | None = None,
+    ) -> list[EntityState]:
+        """Return the state history for an entity.
+
+        Args:
+            entity_id: The entity to query.
+            limit: Optional max number of recent states.
+
+        Returns:
+            Ordered list of EntityState (newest last), or empty list
+            if the entity doesn't exist or has no history.
+        """
+        entity = self._entities.get(entity_id)
+        if entity is None:
+            return []
+        return entity.get_state_history(limit=limit)
+
+    def get_state_timeline(
+        self,
+        entity_id: str,
+    ) -> list[dict[str, Any]]:
+        """Return a human-readable timeline of state transitions.
+
+        Each entry contains::
+
+            {"from": str | None, "to": str, "at": str, "metadata": dict}
+
+        Args:
+            entity_id: The entity to query.
+
+        Returns:
+            A list of transition dicts in chronological order.
+        """
+        entity = self._entities.get(entity_id)
+        if entity is None or not entity.state_history:
+            return []
+
+        timeline: list[dict[str, Any]] = []
+        prev: str | None = None
+        for st in entity.state_history:
+            timeline.append({
+                "from": prev,
+                "to": st.state_name,
+                "at": st.timestamp.isoformat(),
+                "metadata": st.metadata,
+            })
+            prev = st.state_name
+        return timeline
+
     # -- Convenience queries --------------------------------------------------
 
     def get_project_context(self, project_name: str) -> dict[str, Any]:
         """Return a structured context dict for a project, suitable for
-        injecting into the planner prompt."""
+        injecting into the planner prompt.
+
+        Includes the project's current state and recent state transitions
+        so the planner can reason about project evolution.
+        """
         projects = self.find_entities(EntityType.PROJECT, project_name)
         if not projects:
             return {}
@@ -275,13 +456,25 @@ class WorldModel:
             e.name for e in self.find_entities(EntityType.PROVIDER)
         ]
 
-        return {
+        ctx: dict[str, Any] = {
             "project": proj.name,
             "language": proj.attributes.get("language", "unknown"),
             "files": files[:20],
             "tools": tools[:10],
             "available_providers": providers,
         }
+
+        state = proj.current_state
+        if state:
+            ctx["current_state"] = state
+            timeline = proj.get_state_history(limit=5)
+            if len(timeline) > 1:
+                ctx["state_timeline"] = [
+                    {"state": s.state_name, "at": s.timestamp.isoformat()}
+                    for s in timeline
+                ]
+
+        return ctx
 
     # -- Serialisation helpers ------------------------------------------------
 
@@ -293,6 +486,15 @@ class WorldModel:
                     "type": e.entity_type.value,
                     "name": e.name,
                     "attributes": e.attributes,
+                    "current_state": e.current_state,
+                    "state_history": [
+                        {
+                            "state": s.state_name,
+                            "at": s.timestamp.isoformat(),
+                            "metadata": s.metadata,
+                        }
+                        for s in e.state_history
+                    ],
                 }
                 for eid, e in self._entities.items()
             },

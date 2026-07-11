@@ -30,6 +30,7 @@ from app.agents.learning_manager import LearningManager
 from app.agents.memory_manager import MemoryManager
 from app.agents.models.execution import ReflectionDecision, ReflectionResult
 from app.agents.models.plan import Plan
+from app.agents.models.policy import ExecutionMode, ExecutionPolicy
 from app.agents.models.strategy import Strategy
 from app.agents.models.task import Task, TaskStatus
 from app.agents.plan_simulator import PlanSimulator
@@ -137,19 +138,34 @@ class Coordinator:
         self,
         conversation_id: str,
         goal: str,
+        policy: ExecutionPolicy | str | None = None,
     ) -> CoordinatorResult:
         """Execute the full agent lifecycle for a user goal.
 
         Args:
             conversation_id: The active conversation.
             goal: The user's request.
+            policy: Execution policy — a predefined mode (``"fast"``,
+                ``"balanced"``, ``"autonomous"``, ``"research"``,
+                ``"coding"``) or an :class:`ExecutionPolicy` instance.
+                ``None`` defaults to ``balanced``.
 
         Returns:
             The final answer, plan, and execution state.
         """
+        if policy is None:
+            resolved_policy = ExecutionMode.BALANCED.policy()
+        elif isinstance(policy, str):
+            resolved_policy = ExecutionMode(policy).policy()
+        else:
+            resolved_policy = policy
+
         state = AgentState(
             conversation_id=conversation_id,
             goal=goal,
+            max_iterations=(
+                resolved_policy.max_iterations or AgentState.__init__.__defaults__[2]
+            ),
         )
 
         tracer = get_tracer()
@@ -176,19 +192,29 @@ class Coordinator:
                     goal=goal,
                 )
 
-                # Step 1 — Plan (always uses memory + strategy).
+                # Step 1 — Plan (or skip with a default single-task plan).
                 _t0 = time.monotonic()
-                with tracer.span("Planner", category="agent"):
-                    plan = await self._planner.plan(
+                if resolved_policy.planning:
+                    with tracer.span("Planner", category="agent"):
+                        plan = await self._planner.plan(
+                            goal=goal,
+                            memory_context=state.memory_context,
+                            strategy=strategy,
+                        )
+                else:
+                    plan = Plan(
                         goal=goal,
-                        memory_context=state.memory_context,
-                        strategy=strategy,
+                        tasks=[Task(
+                            id=str(uuid4()),
+                            description=goal,
+                            capability=None,
+                            dependencies=[],
+                        )],
                     )
 
                 # Step 1a — Generate alternative plans and pick the best via simulation.
-                if self._plan_simulator is not None:
+                if resolved_policy.simulation and self._plan_simulator is not None:
                     plans = [plan]
-                    # Generate 1-2 alternative plans with different temperature.
                     for alt_temp in (0.5, 0.9):
                         try:
                             alt = await self._planner.plan(
@@ -204,7 +230,9 @@ class Coordinator:
                     best_plan = plan
                     best_score = -1.0
                     for candidate in plans:
-                        sim = await self._plan_simulator.simulate(goal, candidate)
+                        sim = await self._plan_simulator.simulate(
+                            goal, candidate, strategy=strategy,
+                        )
                         score = sim.overall_success_probability * 0.7 + (
                             1.0 - min(sim.total_estimated_cost_ms / 60000.0, 1.0)
                         ) * 0.3
@@ -223,8 +251,8 @@ class Coordinator:
                 state.plan = plan
                 graph = self._build_graph(plan)
 
-                # Step 1b — Simulate the plan (heuristic cost/success estimate).
-                if self._plan_simulator is not None:
+                # Step 1b — Simulate the plan for logging (heuristic cost/success estimate).
+                if resolved_policy.simulation and self._plan_simulator is not None:
                     with tracer.span("Plan Simulation", category="agent"):
                         sim = await self._plan_simulator.simulate(goal, plan)
                     logger.info(
@@ -272,9 +300,17 @@ class Coordinator:
                                 continue  # skip reflection; will re-run
 
                         # Step 3 — Reflect (before storing so assessment is available).
-                        with tracer.span("Reflection", category="agent"):
-                            assessment = await self._reflection.reflect(result)
-                        state.reflections[task.id] = assessment
+                        if resolved_policy.reflection:
+                            with tracer.span("Reflection", category="agent"):
+                                assessment = await self._reflection.reflect(result)
+                            state.reflections[task.id] = assessment
+                        else:
+                            assessment = ReflectionResult(
+                                task_id=task.id,
+                                decision=ReflectionDecision.ACCEPT,
+                                confidence=0.5,
+                                reason="Reflection disabled by policy.",
+                            )
                         reflection_outcomes_total.labels(
                             decision=assessment.decision.value,
                         ).inc()
@@ -313,7 +349,8 @@ class Coordinator:
 
                         # Record anti-pattern on failure.
                         if (
-                            self._learning_manager is not None
+                            resolved_policy.learning
+                            and self._learning_manager is not None
                             and result.status is TaskStatus.FAILED
                         ):
                             warning = (
@@ -334,13 +371,18 @@ class Coordinator:
                 state.iteration += 1
 
                 # Check whether the result is satisfactory.
-                with tracer.span("Plan-level Reflection", category="agent"):
-                    final_assessment = await self._reflect_on_plan(state)
-                if final_assessment.decision is ReflectionDecision.ACCEPT:
-                    break
+                if resolved_policy.reflection:
+                    with tracer.span("Plan-level Reflection", category="agent"):
+                        final_assessment = await self._reflect_on_plan(state)
+                    if final_assessment.decision is ReflectionDecision.ACCEPT:
+                        break
+                else:
+                    # Without reflection, accept after first successful iteration.
+                    if state.completed_results:
+                        break
 
         # Extract learning pattern after successful execution.
-        if self._learning_manager is not None and state.completed_results:
+        if resolved_policy.learning and self._learning_manager is not None and state.completed_results:
             with tracer.span("Pattern Extraction", category="learning"):
                 results_list = list(state.completed_results.values())
                 reflections_list = list(state.reflections.values())

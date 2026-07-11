@@ -386,11 +386,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # Create the adaptive model selector.
     from app.llm.model_selector import ModelSelector
+    from app.memory.experience_graph import ExperienceGraph
 
+    experience_graph: ExperienceGraph = app.state.get("experience_graph", ExperienceGraph())
     model_selector = ModelSelector.from_router(
         router=llm_router,
         default_model=settings.default_llm_model,
         default_provider=settings.default_llm_provider,
+        metrics_tracker=app.state.get("metrics_tracker"),
+        experience_graph=experience_graph,
     )
     app.state.model_selector = model_selector
 

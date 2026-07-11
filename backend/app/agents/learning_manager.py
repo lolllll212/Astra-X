@@ -10,6 +10,7 @@ from app.agents.models.pattern import AntiPattern, ExecutionPattern
 from app.agents.models.plan import Plan
 from app.agents.models.task import TaskStatus
 from app.core.logging import get_logger
+from app.memory.experience_compressor import ExperienceCompressor
 
 if TYPE_CHECKING:
     from app.database.repositories.pattern_repository import PatternRepository
@@ -501,6 +502,80 @@ class LearningManager:
             return new_plan
 
         return existing_plan
+
+    # ------------------------------------------------------------------
+    # Experience Compression
+    # ------------------------------------------------------------------
+
+    async def compress_experience(
+        self,
+        threshold: int = 100,
+        min_per_cluster: int = 3,
+    ) -> int:
+        """Consolidate the experience graph into compressed patterns.
+
+        When the graph exceeds *threshold* trajectories, this method:
+
+        1. Clusters trajectories by domain + normalised goal.
+        2. Summarises each cluster into a :class:`CompressedWorkflow`.
+        3. Archives the raw trajectories (removes from the graph).
+        4. Exports the workflows as :class:`ExecutionPattern` objects
+           and saves them into the pattern store.
+
+        Returns:
+            How many compressed workflow summaries were created.
+        """
+        if self._experience_graph is None:
+            logger.info("compress_experience.no_graph")
+            return 0
+
+        compressor = ExperienceCompressor(self._experience_graph)
+        if not compressor.should_compress(threshold=threshold):
+            logger.info(
+                "compress_experience.skipped",
+                count=self._experience_graph.count,
+                threshold=threshold,
+            )
+            return 0
+
+        workflows = compressor.compress(min_per_cluster=min_per_cluster)
+        if not workflows:
+            return 0
+
+        archived = compressor.archive(workflows)
+        patterns = compressor.export_as_patterns(workflows)
+
+        saved = 0
+        for pattern in patterns:
+            existing = self._store.get_by_goal_pattern(pattern.goal_pattern)
+            if existing is None:
+                await self._store.save(pattern)
+                saved += 1
+            else:
+                # Merge: update the existing pattern with consolidated data.
+                merged = existing.model_copy(update={
+                    "strategy_summary": pattern.strategy_summary,
+                    "plan_template": pattern.plan_template or existing.plan_template,
+                    "preferred_provider": pattern.preferred_provider or existing.preferred_provider,
+                    "preferred_model": pattern.preferred_model or existing.preferred_model,
+                    "tool_sequence": list(dict.fromkeys(pattern.tool_sequence + existing.tool_sequence)),
+                    "tags": list(set(existing.tags + pattern.tags)),
+                    "success_count": existing.success_count + pattern.success_count,
+                    "total_count": existing.total_count + pattern.total_count,
+                    "avg_confidence": (existing.avg_confidence + pattern.avg_confidence) / 2,
+                    "avg_execution_cost_ms": (existing.avg_execution_cost_ms + pattern.avg_execution_cost_ms) / 2,
+                    "updated_at": datetime.now(),
+                })
+                await self._store.save(merged)
+                saved += 1
+
+        logger.info(
+            "compress_experience.complete",
+            workflows=len(workflows),
+            archived=archived,
+            patterns_saved=saved,
+        )
+        return len(workflows)
 
     # ------------------------------------------------------------------
     # Experience Graph shortcuts
