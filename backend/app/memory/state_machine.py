@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -18,7 +18,7 @@ class StateTransition:
 
     from_state: str | None
     to_state: str
-    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
     trigger: str = "manual"
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -62,7 +62,7 @@ class StateMachineDefinition:
 # ---------------------------------------------------------------------------
 
 
-def build_default_state_machines() -> dict:
+def build_default_state_machines() -> dict[EntityType, StateMachineDefinition]:
     """Return default state machines for common entity types.
 
     Callers can extend or replace these before registering on the
@@ -77,15 +77,14 @@ def build_default_state_machines() -> dict:
     }
 
 
-def _build_mission_workflow(entity_type=None):
+def _build_mission_workflow(entity_type: EntityType | None = None) -> StateMachineDefinition:
     """Mission lifecycle state machine supporting long-running projects.
 
     Allows missions to be paused and resumed:
         Mission → Paused → Resume tomorrow → Continue
     """
-    from app.memory.world_model import EntityType
-
     from app.agents.models.goal import MissionStatus
+    from app.memory.world_model import EntityType
 
     sm = StateMachineDefinition(
         entity_type=entity_type or EntityType.MISSION,
@@ -107,7 +106,7 @@ def _build_mission_workflow(entity_type=None):
     return sm
 
 
-def _build_dev_workflow(entity_type=None):
+def _build_dev_workflow(entity_type: EntityType | None = None) -> StateMachineDefinition:
     """Comprehensive development-workflow state machine.
 
     Covers the full lifecycle of a code project/repository from draft
@@ -175,7 +174,7 @@ def _build_dev_workflow(entity_type=None):
 
 
 def format_transition_rules_for_prompt(
-    definitions: dict,
+    definitions: dict[EntityType, StateMachineDefinition],
 ) -> str:
     """Format registered state machines as text for the planner prompt."""
     if not definitions:

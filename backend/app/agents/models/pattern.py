@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -134,26 +134,38 @@ class ExecutionPattern(BaseModel):
         default=None,
     )
 
-    def apply_confidence_decay(self, decay_factor: float = 0.9) -> float:
-        """Apply confidence decay when pattern fails or stops being used.
+    def apply_confidence_decay(self, decay_factor: float = 0.9) -> ExecutionPattern:
+        """Return a new pattern with decayed confidence when pattern fails or stops being used.
 
         Args:
             decay_factor: Multiplier for confidence decay (default 0.9 = 10% decay).
 
         Returns:
-            The new decayed confidence value.
+            A new ExecutionPattern with decayed confidence values.
         """
-        self.avg_confidence = max(0.0, self.avg_confidence * decay_factor)
-        self.last_reflection_confidence = max(0.0, self.last_reflection_confidence * decay_factor)
-        return self.avg_confidence
+        new_avg_conf = max(0.0, self.avg_confidence * decay_factor)
+        new_last_ref_conf = max(0.0, self.last_reflection_confidence * decay_factor)
+        return self.model_copy(update={
+            "avg_confidence": new_avg_conf,
+            "last_reflection_confidence": new_last_ref_conf,
+            "updated_at": datetime.now(UTC),
+        })
 
-    def record_failure(self, decay_factor: float = 0.95) -> None:
-        """Record a failed application and decay confidence.
+    def record_failure(self, decay_factor: float = 0.95) -> ExecutionPattern:
+        """Record a failed application and return a new pattern with decayed confidence.
 
         Args:
             decay_factor: Multiplier for confidence decay (default 0.95 = 5% decay per failure).
+
+        Returns:
+            A new ExecutionPattern with incremented total_count and decayed confidence.
         """
-        self.total_count += 1
-        self.avg_confidence = max(0.0, self.avg_confidence * decay_factor)
-        self.last_reflection_confidence = max(0.0, self.last_reflection_confidence * decay_factor)
-        self.updated_at = datetime.now(timezone.utc)
+        new_total = self.total_count + 1
+        new_avg_conf = max(0.0, self.avg_confidence * decay_factor)
+        new_last_ref_conf = max(0.0, self.last_reflection_confidence * decay_factor)
+        return self.model_copy(update={
+            "total_count": new_total,
+            "avg_confidence": new_avg_conf,
+            "last_reflection_confidence": new_last_ref_conf,
+            "updated_at": datetime.now(UTC),
+        })

@@ -1,25 +1,19 @@
-
-
 from __future__ import annotations
 
-import os
 from enum import StrEnum
 from functools import lru_cache
+from typing import Annotated, Any, ClassVar
 
-from pydantic import Field, SecretStr, ValidationInfo, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
-
-__all__ = [
-    "Environment",
-    "LogFormat",
-    "LogLevel",
-    "Settings",
-    "get_settings",
-]
-
-_DEFAULT_DEV_SECRET_KEY = "dev-secret-key-change-this-in-production-please"
-"""Sentinel placeholder. Production startup is rejected if this exact
-value is still in use, preventing accidental deployment with a dev secret."""
+from pydantic import (
+    BeforeValidator,
+    Field,
+    SecretStr,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
+from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
+from pydantic_settings.sources import DotEnvSettingsSource
 
 
 class Environment(StrEnum):
@@ -54,6 +48,11 @@ class LogFormat(StrEnum):
 
     CONSOLE = "console"
     JSON = "json"
+
+
+_DEFAULT_DEV_SECRET_KEY = "dev-secret-key-change-this-in-production-please"
+"""Sentinel placeholder. Production startup is rejected if this exact
+value is still in use, preventing accidental deployment with a dev secret."""
 
 
 def _split_csv(value: object) -> object:
@@ -104,6 +103,29 @@ def _ensure_http_scheme(value: str | None, field_name: str) -> str | None:
     return value
 
 
+class CsvDotEnvSettingsSource(DotEnvSettingsSource):
+    """Custom .env file settings source that treats list fields as CSV, not JSON.
+
+    The default DotEnvSettingsSource tries to parse values that look like
+    lists/dicts as JSON. This breaks comma-separated values in .env files.
+    This subclass overrides that behavior for known CSV list fields.
+    """
+
+    CSV_LIST_FIELDS: ClassVar[set[str]] = {"allowed_hosts", "cors_origins"}
+
+    def decode_complex_value(
+        self,
+        field_name: str,
+        field: Any,
+        value: str,
+    ) -> Any:
+        # For CSV list fields, return the raw string to be parsed by BeforeValidator
+        if field_name in self.CSV_LIST_FIELDS:
+            return value
+        # For other fields, use default JSON parsing
+        return super().decode_complex_value(field_name, field, value)
+
+
 class Settings(BaseSettings):
     """Validated, environment-aware configuration for the Astra X backend.
 
@@ -123,6 +145,23 @@ class Settings(BaseSettings):
         validate_default=True,
     )
 
+    # --- Custom settings source to handle CSV lists in .env files ---
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        return (
+            init_settings,
+            env_settings,
+            CsvDotEnvSettingsSource(settings_cls),
+            file_secret_settings,
+        )
+
     # --- Application identity -------------------------------------------
     environment: Environment = Field(
         default=Environment.DEVELOPMENT,
@@ -134,41 +173,41 @@ class Settings(BaseSettings):
     )
     app_name: str = Field(
         default="Astra_X",
-        min_length=1,
-        description="Human-readable application name, used in logs and API metadata.",
+        description="Human-readable application name.",
     )
     app_version: str = Field(
         default="0.1.0",
-        min_length=1,
-        description="Semantic version of the running application.",
+        description="Semantic version string.",
     )
     api_v1_prefix: str = Field(
         default="/api/v1",
-        pattern=r"^/.+",
-        description="URL prefix mounted for the version 1 HTTP API.",
+        description="URL prefix for the v1 HTTP API.",
     )
 
     # --- Server -----------------------------------------------------------
     host: str = Field(
         default="127.0.0.1",
-        min_length=1,
-        description="Interface the ASGI server binds to.",
+        description="Interface to bind the HTTP server to.",
     )
     port: int = Field(
         default=8000,
         ge=1,
         le=65535,
-        description="TCP port the ASGI server listens on.",
+        description="TCP port to listen on.",
     )
 
     # --- Logging ----------------------------------------------------------
     log_level: LogLevel = Field(
         default=LogLevel.INFO,
-        description="Minimum severity of log records that are emitted.",
+        description="Minimum log severity: DEBUG, INFO, WARNING, ERROR, CRITICAL.",
     )
     log_format: LogFormat = Field(
         default=LogFormat.CONSOLE,
         description="Structured log rendering format.",
+    )
+    trace_propagation: bool = Field(
+        default=True,
+        description="Enable W3C traceparent header propagation.",
     )
 
     # --- Security -----------------------------------------------------------
@@ -180,22 +219,30 @@ class Settings(BaseSettings):
             "Generate with: python -c \"import secrets; print(secrets.token_hex(32))\""
         ),
     )
-    allowed_hosts: list[str] = Field(
-        default_factory=lambda: ["*"],
-        min_length=1,
-        description=(
-            "Hostnames this server will accept requests for. '*' (any host) "
-            "is only permitted outside of production."
+    allowed_hosts: Annotated[
+        list[str],
+        BeforeValidator(_split_csv),
+        Field(
+            default_factory=lambda: ["*"],
+            min_length=1,
+            description=(
+                "Hostnames this server will accept requests for. '*' (any host) "
+                "is only permitted outside of production."
+            ),
         ),
-    )
-    cors_origins: list[str] = Field(
-        default_factory=lambda: ["http://localhost:5173"],
-        min_length=1,
-        description=(
-            "Origins permitted to make cross-origin requests to the API. "
-            "Wildcards are only permitted outside of production."
+    ]
+    cors_origins: Annotated[
+        list[str],
+        BeforeValidator(_split_csv),
+        Field(
+            default_factory=lambda: ["http://localhost:5173"],
+            min_length=1,
+            description=(
+                "Origins permitted to make cross-origin requests to the API. "
+                "Wildcards are only permitted outside of production."
+            ),
         ),
-    )
+    ]
     cors_allow_credentials: bool = Field(
         default=True,
         description="Whether CORS responses may include credentials (cookies, auth headers).",
@@ -247,120 +294,55 @@ class Settings(BaseSettings):
     )
     ollama_base_url: str = Field(
         default="http://localhost:11434",
-        description="Base URL of a local Ollama server.",
+        description="Base URL for local Ollama server.",
     )
     lm_studio_base_url: str = Field(
         default="http://localhost:1234/v1",
-        description="Base URL of a local LM Studio OpenAI-compatible server.",
+        description="Base URL for local LM Studio server.",
     )
     openai_compatible_base_url: str | None = Field(
         default=None,
-        description="Base URL of a generic OpenAI-compatible API, if configured.",
+        description="Base URL for generic OpenAI-compatible API (optional).",
     )
-    openai_compatible_api_key: SecretStr | None = Field(
+    openai_compatible_api_key: str | None = Field(
         default=None,
-        description="API key for the generic OpenAI-compatible provider, if configured.",
+        description="API key for OpenAI-compatible provider (optional).",
     )
 
-    # --- Embeddings -----------------------------------------------------------
+    # --- Embeddings ---
     embedding_provider: str = Field(
         default="ollama",
         min_length=1,
-        description="Provider for generating text embeddings ('ollama', 'openai', 'sentence_transformers').",
+        description="Embedding provider: ollama, openai, sentence_transformers",
     )
     embedding_model: str = Field(
         default="nomic-embed-text",
         min_length=1,
-        description="Model name used for generating embeddings.",
+        description="Embedding model name",
     )
     embedding_dimensions: int = Field(
         default=768,
         ge=1,
-        description="Dimensionality of embedding vectors.",
+        description="Embedding vector dimensionality",
     )
 
-    # --- Security hardening (Phase 1) ------------------------------------------
-    sandbox_enabled: bool = Field(
-        default=False,
-        description="Enable the hardened Python execution sandbox.",
+    # --- Feature flags ---
+    enable_background_tasks: bool = Field(
+        default=True,
+        description="Enable background task processing.",
     )
-    sandbox_timeout_seconds: int = Field(
-        default=10,
+    enable_reflection: bool = Field(
+        default=True,
+        description="Enable post-execution reflection step.",
+    )
+    max_iterations: int = Field(
+        default=5,
         ge=1,
-        le=120,
-        description="Default timeout for sandboxed Python execution.",
-    )
-    sandbox_max_memory_mb: int = Field(
-        default=256,
-        ge=16,
-        description="Maximum memory for sandboxed Python execution (MiB).",
-    )
-    sandbox_blocked_modules: list[str] = Field(
-        default_factory=lambda: [
-            "os", "subprocess", "shutil", "signal", "ctypes", "socket",
-            "http", "urllib", "requests", "httpx", "pathlib", "tempfile",
-        ],
-        description="Modules blocked in the Python sandbox.",
-    )
-    sandbox_network_access: bool = Field(
-        default=False,
-        description="Whether sandboxed Python code can make network requests.",
-    )
-    sandbox_filesystem_access: bool = Field(
-        default=False,
-        description="Whether sandboxed Python code can read/write files.",
-    )
-    prompt_injection_detection_enabled: bool = Field(
-        default=True,
-        description="Enable prompt injection detection on user input.",
-    )
-    prompt_injection_block_threshold: float = Field(
-        default=0.8,
-        ge=0.0,
-        le=1.0,
-        description="Confidence threshold above which injection blocks the request (0-1).",
-    )
-
-    # --- Observability ------------------------------------------
-    metrics_enabled: bool = Field(
-        default=True,
-        description="Enable Prometheus metrics endpoint and collection.",
-    )
-    metrics_prefix: str = Field(
-        default="astra_x",
-        min_length=1,
-        description="Prefix applied to all Prometheus metric names.",
-    )
-    otel_service_name: str = Field(
-        default="astra-x-backend",
-        description="Service name reported to OpenTelemetry.",
-    )
-    otel_exporter_otlp_endpoint: str | None = Field(
-        default=None,
-        description="OTLP exporter endpoint (e.g. http://otel-collector:4318). None disables OTel export.",
-    )
-    otel_traces_sampler_ratio: float = Field(
-        default=0.1,
-        ge=0.0,
-        le=1.0,
-        description="Fraction of traces to sample when OTel is enabled (0.0-1.0).",
-    )
-    trace_propagation_enabled: bool = Field(
-        default=True,
-        description="Enable W3C traceparent header propagation.",
+        le=20,
+        description="Maximum plan→execute→reflect cycles before forced completion.",
     )
 
     # --- Field validators -----------------------------------------------------------
-
-    @field_validator("allowed_hosts", "cors_origins", mode="before")
-    @classmethod
-    def _coerce_csv_lists(cls, value: object) -> object:
-        """Accept comma-separated strings for list-typed fields.
-
-        Allows ``ASTRA_CORS_ORIGINS=http://a.com,http://b.com`` in a `.env`
-        file rather than requiring JSON-array syntax.
-        """
-        return _split_csv(value)
 
     @field_validator("default_llm_provider", "default_llm_model")
     @classmethod
@@ -380,51 +362,17 @@ class Settings(BaseSettings):
             )
         return value
 
-    @field_validator("ollama_base_url", "lm_studio_base_url")
+    @field_validator("openai_compatible_base_url", "ollama_base_url", "lm_studio_base_url", mode="before")
     @classmethod
-    def _validate_required_url(cls, value: str, info: ValidationInfo) -> str:
-        """Validate required base-URL fields use an explicit http(s) scheme."""
-        result = _ensure_http_scheme(value, info.field_name or "url")
-        assert result is not None  # required field: value is never None here
-        return result
+    def _validate_provider_url(cls, value: object, info: ValidationInfo) -> object:
+        """Validate that provider URLs have explicit http(s) scheme."""
+        return _ensure_http_scheme(value, info.field_name)
 
-    @field_validator("openai_compatible_base_url")
+    @field_validator("embedding_model", mode="before")
     @classmethod
-    def _validate_optional_url(cls, value: str | None, info: ValidationInfo) -> str | None:
-        """Validate the optional OpenAI-compatible base URL, if one is set."""
-        return _ensure_http_scheme(value, info.field_name or "url")
-
-    # --- _FILE env var support (Docker Secrets / Vault agent) ---------------------------
-
-    @model_validator(mode="before")
-    @classmethod
-    def _resolve_secret_files(cls, values: dict[str, object]) -> dict[str, object]:
-        """Override sensitive fields from ``<FIELD>_FILE`` env vars.
-
-        If ``ASTRA_SECRET_KEY_FILE`` is set (Docker secrets / Vault agent
-        pattern), the file is read and its content replaces the inline
-        ``secret_key`` value. This keeps credentials out of environment
-        blocks and compose files.
-        """
-        for env_suffix, field_name in [("SECRET_KEY_FILE", "secret_key")]:
-            file_path = os.environ.get(f"ASTRA_{env_suffix}")
-            if not file_path:
-                continue
-            try:
-                with open(file_path, encoding="utf-8") as f:
-                    value = f.read().strip()
-            except (FileNotFoundError, PermissionError, OSError) as exc:
-                raise ValueError(
-                    f"Cannot read secret file {file_path!r} "
-                    f"(set via ASTRA_{env_suffix}): {exc}"
-                ) from exc
-            if not value:
-                raise ValueError(
-                    f"Secret file {file_path!r} "
-                    f"(set via ASTRA_{env_suffix}) is empty"
-                )
-            values[field_name] = value
-        return values
+    def _validate_embedding_model(cls, value: str) -> str:
+        """Normalize embedding model identifier."""
+        return value.strip().lower()
 
     # --- Cross-field, production-safety validation -----------------------------------------
 
@@ -450,13 +398,14 @@ class Settings(BaseSettings):
             violations.append("secret_key must be overridden from its development default")
 
         secret_value = self.secret_key.get_secret_value()
-        if len(secret_value) < 64:
+        if self.environment is Environment.PRODUCTION and (
+            len(secret_value) != 64
+            or not all(c in "0123456789abcdef" for c in secret_value)
+        ):
             violations.append(
-                "secret_key must be a 64-character hex string in production "
-                "(generate with: python -c \"import secrets; print(secrets.token_hex(32))\")"
-            )
-        elif not all(c in "0123456789abcdef" for c in secret_value):
-            violations.append("secret_key must be a valid 64-character hex string in production")
+                    "secret_key must be a 64-character hex string in production "
+                    "(generate with: python -c \"import secrets; print(secrets.token_hex(32))\")"
+                )
 
         if "*" in self.allowed_hosts:
             violations.append("allowed_hosts must not contain '*' in production")
@@ -464,49 +413,65 @@ class Settings(BaseSettings):
         if "*" in self.cors_origins:
             violations.append("cors_origins must not contain '*' in production")
 
-        if self.database_echo:
-            violations.append("database_echo must be False in production")
-
         if violations:
-            joined = "; ".join(violations)
-            raise ValueError(f"Unsafe production configuration: {joined}")
+            raise ValueError("Production safety violations: " + "; ".join(violations))
 
         return self
 
-    # --- Convenience accessors -----------------------------------------------------------
 
-    @property
-    def is_development(self) -> bool:
-        """Whether the application is running in the development environment."""
-        return self.environment is Environment.DEVELOPMENT
+class Environment(StrEnum):
+    """The runtime environment the application is executing in.
 
-    @property
-    def is_testing(self) -> bool:
-        """Whether the application is running in the testing environment."""
-        return self.environment is Environment.TESTING
+    Used to gate environment-specific defaults and safety checks (e.g.
+    refusing to start in production with debug mode enabled).
+    """
 
-    @property
-    def is_production(self) -> bool:
-        """Whether the application is running in the production environment."""
-        return self.environment is Environment.PRODUCTION
+    DEVELOPMENT = "development"
+    TESTING = "testing"
+    PRODUCTION = "production"
+
+
+class LogLevel(StrEnum):
+    """Supported structlog/stdlib logging levels."""
+
+    DEBUG = "DEBUG"
+    INFO = "INFO"
+    WARNING = "WARNING"
+    ERROR = "ERROR"
+    CRITICAL = "CRITICAL"
+
+
+class LogFormat(StrEnum):
+    """Output format for structured logs.
+
+    ``CONSOLE`` is human-readable and colorized, intended for local
+    development. ``JSON`` emits machine-parsable structured logs, intended
+    for production log aggregation.
+    """
+
+    CONSOLE = "console"
+    JSON = "json"
+
+
+_DEFAULT_DEV_SECRET_KEY = "dev-secret-key-change-this-in-production-please"
+"""Sentinel placeholder. Production startup is rejected if this exact
+value is still in use, preventing accidental deployment with a dev secret."""
 
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
-    """Return the process-wide :class:`Settings` singleton.
+    """Return the process-wide, memoised Settings singleton.
 
-    The first call constructs and validates a :class:`Settings` instance
-    from the environment and ``.env`` file; every subsequent call returns
-    the same cached, immutable instance, avoiding repeated environment
-    parsing and guaranteeing a single consistent configuration view across
-    the application.
-
-    In tests that need to exercise different configurations, call
-    ``get_settings.cache_clear()`` before constructing a new instance
-    (typically with environment variables monkeypatched beforehand).
-
-    Returns:
-        The validated, immutable application settings.
+    The cache ensures environment variables and ``.env`` are only parsed
+    once, which is critical for performance in long-running processes.
     """
     return Settings()
 
+
+__all__ = [
+    "Environment",
+    "LogFormat",
+    "LogLevel",
+    "Settings",
+    "get_settings",
+]

@@ -207,7 +207,7 @@ class Coordinator:
             conversation_id=conversation_id,
             goal=goal,
             max_iterations=(
-                resolved_policy.max_iterations or AgentState.__init__.__defaults__[2]
+                resolved_policy.max_iterations or AgentState.__dataclass_fields__["max_iterations"].default
             ),
         )
 

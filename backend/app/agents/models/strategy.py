@@ -4,11 +4,11 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from app.agents.models.policy import ExecutionMode
+    pass
 
 
 @dataclass
-class AlternativeStrategy:
+class StrategyAlternative:
     """An alternative strategy option with its own confidence score."""
 
     name: str
@@ -46,7 +46,7 @@ class Strategy:
     confidence: float = 0.0
 
     # Alternative strategies with their own confidences
-    alternatives: list[AlternativeStrategy] = field(default_factory=list)
+    alternatives: list[StrategyAlternative] = field(default_factory=list)
 
     # Fallback
     fallback_provider: str | None = None

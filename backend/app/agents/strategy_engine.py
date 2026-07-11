@@ -1,34 +1,21 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from app.agents.models.policy import ExecutionMode
-from app.agents.models.strategy import Strategy
 from app.agents.learning_store import GoalDomain, classify_goal
+from app.agents.models.policy import ExecutionMode
+from app.agents.models.strategy import Strategy, StrategyAlternative
 from app.core.logging import get_logger
 from app.memory.world_model import EntityType
 
 if TYPE_CHECKING:
     from app.agents.learning_manager import LearningManager
+    from app.llm.provider_metrics import ProviderMetricsTracker
     from app.memory.experience_graph import ExperienceGraph
     from app.memory.world_model import WorldModel
-    from app.llm.provider_metrics import ProviderMetricsTracker
 
 logger = get_logger(__name__)
-
-
-@dataclass
-class StrategyAlternative:
-    """An alternative strategy with its confidence score."""
-    name: str
-    strategy_summary: str
-    confidence: float
-    success_rate: float = 0.0
-    avg_cost_ms: float = 0.0
-    provider: str | None = None
-    model: str | None = None
 
 
 class StrategyEngine:
@@ -197,7 +184,7 @@ class StrategyEngine:
             # 2. State narrative — chronological summary of transitions.
             narrative = self._world_model.get_state_narrative(proj.id)
             if narrative:
-                blocks.append(f"    State narrative:\n    " +
+                blocks.append("    State narrative:\n    " +
                               narrative.replace("\n", "\n    "))
 
             # 3. Dwell times — how long in each state (identify stalls).
@@ -243,7 +230,7 @@ class StrategyEngine:
             return 0.0, []
 
         alternatives = []
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         for i, p in enumerate(patterns):
             # Base confidence from pattern's average confidence
@@ -269,10 +256,10 @@ class StrategyEngine:
                 name=f"Strategy {chr(65 + i)}" if i < 26 else f"Strategy {i + 1}",
                 strategy_summary=getattr(p, "strategy_summary", "")[:100],
                 confidence=round(decayed_confidence, 3),
-                success_rate=round(success_rate, 3),
-                avg_cost_ms=getattr(p, "avg_execution_cost_ms", 0.0),
-                provider=getattr(p, "preferred_provider", None),
-                model=getattr(p, "preferred_model", None),
+                expected_success_rate=round(success_rate, 3),
+                expected_latency_ms=getattr(p, "avg_execution_cost_ms", 0.0),
+                recommended_provider=getattr(p, "preferred_provider", None),
+                recommended_model=getattr(p, "preferred_model", None),
             )
             alternatives.append(alt)
 
