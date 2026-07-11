@@ -49,6 +49,14 @@ class GoalModel(Base):
     objective_id: Mapped[str] = mapped_column(String(36), ForeignKey("objective.id"), index=True)
     description: Mapped[str] = mapped_column(Text, default="")
     status: Mapped[str] = mapped_column(String(20), default="pending")
+
+    # Prioritization fields
+    priority: Mapped[str] = mapped_column(String(10), default="medium")
+    urgency: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    estimated_cost_ms: Mapped[float] = mapped_column(Float, default=0.0)
+    success_probability: Mapped[float] = mapped_column(Float, default=0.0)
+    dependencies: Mapped[list | None] = mapped_column(JSON, nullable=True)
+
     plan_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     result_summary: Mapped[str] = mapped_column(Text, default="")
     error: Mapped[str | None] = mapped_column(Text, nullable=True)

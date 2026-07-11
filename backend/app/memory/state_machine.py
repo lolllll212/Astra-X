@@ -73,7 +73,38 @@ def build_default_state_machines() -> dict:
     return {
         EntityType.PROJECT: _build_dev_workflow(EntityType.PROJECT),
         EntityType.REPOSITORY: _build_dev_workflow(EntityType.REPOSITORY),
+        EntityType.MISSION: _build_mission_workflow(EntityType.MISSION),
     }
+
+
+def _build_mission_workflow(entity_type=None):
+    """Mission lifecycle state machine supporting long-running projects.
+
+    Allows missions to be paused and resumed:
+        Mission → Paused → Resume tomorrow → Continue
+    """
+    from app.memory.world_model import EntityType
+
+    from app.agents.models.goal import MissionStatus
+
+    sm = StateMachineDefinition(
+        entity_type=entity_type or EntityType.MISSION,
+        initial_state=MissionStatus.ACTIVE,
+    )
+
+    # Active → Paused (break due to external reasons)
+    sm.add_transition(MissionStatus.ACTIVE, MissionStatus.PAUSED)
+
+    # Paused → Active (resume after break)
+    sm.add_transition(MissionStatus.PAUSED, MissionStatus.ACTIVE)
+
+    # Completed or abandoned end states
+    sm.add_transition(MissionStatus.ACTIVE, MissionStatus.COMPLETED)
+    sm.add_transition(MissionStatus.ACTIVE, MissionStatus.ABANDONED)
+    sm.add_transition(MissionStatus.PAUSED, MissionStatus.COMPLETED)
+    sm.add_transition(MissionStatus.PAUSED, MissionStatus.ABANDONED)
+
+    return sm
 
 
 def _build_dev_workflow(entity_type=None):

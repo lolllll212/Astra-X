@@ -49,6 +49,7 @@ class EntityType(StrEnum):
     TASK = "task"
     PATTERN = "pattern"
     ANTIPATTERN = "antipattern"
+    MISSION = "mission"
 
 
 class RelationType(StrEnum):
@@ -543,6 +544,241 @@ class WorldModel:
 
         return entity.set_state(to_state, trigger=trigger, metadata=metadata)
 
+    # -- State reasoning -----------------------------------------------------
+
+    def get_state_narrative(
+        self, entity_id: str, max_events: int = 10,
+    ) -> str:
+        """Produce a human-readable narrative of state changes.
+
+        Walks the entity's transition history and builds a chronological
+        summary such as::
+
+            1. (initial) → Tests Failed (triggered by task:run_tests)
+            2. Tests Failed → Fix Applied (triggered by task:fix_bug)
+            3. Fix Applied → Tests Passing (triggered by task:run_tests)
+            Next possible states: Ready to Deploy, In Development
+
+        Args:
+            entity_id: The entity to describe.
+            max_events: Maximum number of transitions to include.
+
+        Returns:
+            A formatted narrative string, or an empty string when the
+            entity doesn't exist or has no transitions.
+        """
+        entity = self._entities.get(entity_id)
+        if not entity or not entity.transitions:
+            return ""
+
+        transitions = entity.transitions[-max_events:]
+        parts: list[str] = []
+        for i, t in enumerate(transitions):
+            trigger_hint = (
+                f" (triggered by {t.trigger})"
+                if t.trigger != "manual" else ""
+            )
+            from_s = t.from_state or "(initial)"
+            parts.append(f"{i + 1}. {from_s} → {t.to_state}{trigger_hint}")
+
+        valid = self.get_valid_next_states(entity_id)
+        if valid:
+            parts.append(
+                f"Next possible states: {', '.join(sorted(valid))}"
+            )
+
+        return "\n".join(parts)
+
+    @staticmethod
+    def _format_duration(seconds: float) -> str:
+        """Format a duration in seconds to a human-friendly string."""
+        if seconds < 0:
+            return "0s"
+        if seconds < 60:
+            return f"{seconds:.0f}s"
+        minutes = seconds / 60
+        if minutes < 60:
+            return f"{minutes:.0f}m"
+        hours = seconds / 3600
+        if hours < 24:
+            return f"{hours:.1f}h"
+        days = hours / 24
+        return f"{days:.1f}d"
+
+    def get_state_dwell_times(
+        self, entity_id: str,
+    ) -> list[dict[str, Any]]:
+        """Calculate how long the entity stayed in each state.
+
+        Compares consecutive transition timestamps. The last entry
+        measures time from the most recent transition to *now*.
+
+        Args:
+            entity_id: The entity to analyse.
+
+        Returns:
+            A list of dicts, one per state visited, with keys::
+
+                state, duration_seconds, duration_human,
+                trigger, entered_at, (still_active)
+        """
+        entity = self._entities.get(entity_id)
+        if not entity or not entity.transitions:
+            return []
+
+        dwells: list[dict[str, Any]] = []
+        ts = entity.transitions
+
+        for i in range(len(ts) - 1):
+            current = ts[i]
+            next_t = ts[i + 1]
+            duration_s = (next_t.timestamp - current.timestamp).total_seconds()
+            dwells.append({
+                "state": current.to_state,
+                "duration_seconds": duration_s,
+                "duration_human": self._format_duration(duration_s),
+                "trigger": current.trigger,
+                "entered_at": current.timestamp.isoformat(),
+            })
+
+        # Current (last) state — dwell up to now.
+        last = ts[-1]
+        duration_s = (datetime.now(timezone.utc) - last.timestamp).total_seconds()
+        dwells.append({
+            "state": last.to_state,
+            "duration_seconds": duration_s,
+            "duration_human": self._format_duration(duration_s),
+            "trigger": last.trigger,
+            "entered_at": last.timestamp.isoformat(),
+            "still_active": True,
+        })
+        return dwells
+
+    def suggest_state_path(
+        self, entity_id: str,
+    ) -> list[dict[str, str]]:
+        """Suggest next states with reasoning, based on the entity's
+        current state and the registered state machine.
+
+        Heuristics map common software-development states to likely
+        follow-up states. If no heuristic matches, every valid next
+        state is listed with a generic reason.
+
+        Args:
+            entity_id: The entity to advise.
+
+        Returns:
+            A list of suggestion dicts, each with ``to`` (state name)
+            and ``reason`` (why this is a good next step).
+        """
+        entity = self._entities.get(entity_id)
+        if not entity:
+            return []
+
+        valid = self.get_valid_next_states(entity_id)
+        state = entity.current_state
+        if not state or not valid:
+            return []
+
+        # Heuristic map: current state → suggested transitions.
+        suggestions_map: dict[str, list[dict[str, str]]] = {
+            "Tests Failed": [
+                {"to": "In Development",
+                 "reason": "Return to development to investigate and fix the failing tests."},
+                {"to": "Dependencies Updated",
+                 "reason": "Test failures can stem from stale or incompatible dependencies."},
+            ],
+            "Tests Passing": [
+                {"to": "Ready for Merge",
+                 "reason": "All tests pass — the change is ready for peer review and merge."},
+                {"to": "Ready to Deploy",
+                 "reason": "Tests pass and the change can proceed to deployment."},
+            ],
+            "In Development": [
+                {"to": "Code Review",
+                 "reason": "Development is complete; submit for peer review."},
+                {"to": "Testing",
+                 "reason": "Validate the changes before moving forward."},
+            ],
+            "Code Review": [
+                {"to": "Testing",
+                 "reason": "Code has been reviewed and approved; run tests to verify."},
+                {"to": "In Development",
+                 "reason": "Changes were requested during review; return to development."},
+            ],
+            "Dependencies Updated": [
+                {"to": "Testing",
+                 "reason": "Dependencies have been updated; run the test suite."},
+            ],
+            "Ready for Merge": [
+                {"to": "Merged",
+                 "reason": "The branch is ready to merge into the main line."},
+            ],
+            "Merged": [
+                {"to": "Deployed",
+                 "reason": "The merged changes are ready for deployment."},
+            ],
+            "Ready to Deploy": [
+                {"to": "Deployed",
+                 "reason": "All checks pass and the build is ready for production."},
+            ],
+            "Deployed": [
+                {"to": "Healthy",
+                 "reason": "Confirm the deployment is running correctly."},
+                {"to": "Rolled Back",
+                 "reason": "Something went wrong — roll back to the previous stable version."},
+            ],
+            "Healthy": [
+                {"to": "Monitoring",
+                 "reason": "Set up or continue monitoring the healthy deployment."},
+            ],
+            "Active": [
+                {"to": "In Development",
+                 "reason": "Project is active and ready for the next development cycle."},
+            ],
+            "Draft": [
+                {"to": "Active",
+                 "reason": "Move from planning to active development."},
+            ],
+        }
+
+        matched = suggestions_map.get(state, [])
+        suggestions = [s for s in matched if s["to"] in valid]
+
+        if not suggestions:
+            suggestions = [
+                {"to": s, "reason": "Valid next state per the defined workflow."}
+                for s in sorted(valid)
+            ]
+
+        return suggestions
+
+    def get_state_insights(
+        self, entity_id: str,
+    ) -> dict[str, Any]:
+        """Aggregate narrative, dwell times, and suggestions into one dict.
+
+        This is a convenience wrapper that calls the three methods above
+        and returns a structured block suitable for prompt injection.
+
+        Args:
+            entity_id: The entity to analyse.
+
+        Returns:
+            A dict with keys ``narrative``, ``dwell_times``, and
+            ``suggestions``.  Returns an empty dict when the entity is
+            unknown.
+        """
+        entity = self._entities.get(entity_id)
+        if not entity:
+            return {}
+
+        return {
+            "narrative": self.get_state_narrative(entity_id),
+            "dwell_times": self.get_state_dwell_times(entity_id),
+            "suggestions": self.suggest_state_path(entity_id),
+        }
+
     # -- Convenience queries --------------------------------------------------
 
     def get_project_context(self, project_name: str) -> dict[str, Any]:
@@ -591,6 +827,17 @@ class WorldModel:
                     {"state": s.state_name, "at": s.timestamp.isoformat()}
                     for s in timeline
                 ]
+
+            # State reasoning — narrative, dwell times, suggested path.
+            narrative = self.get_state_narrative(proj.id)
+            if narrative:
+                ctx["state_narrative"] = narrative
+            dwell = self.get_state_dwell_times(proj.id)
+            if dwell:
+                ctx["state_dwell_times"] = dwell
+            suggestions = self.suggest_state_path(proj.id)
+            if suggestions:
+                ctx["state_suggestions"] = suggestions
 
         return ctx
 

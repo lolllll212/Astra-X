@@ -18,6 +18,9 @@ from app.agents.models.goal import (
     MissionStatus,
     Objective,
     ObjectiveStatus,
+    Priority,
+    PrioritizedGoal,
+    default_priority_score,
 )
 from app.core.logging import get_logger
 
@@ -133,12 +136,22 @@ class GoalManager:
         self,
         objective_id: str,
         description: str,
+        priority: Priority = Priority.MEDIUM,
+        urgency: datetime | None = None,
+        estimated_cost_ms: float = 0.0,
+        success_probability: float = 0.0,
+        dependencies: list[str] | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> GoalNode:
-        """Create a new goal within an objective."""
+        """Create a new goal within an objective with prioritisation fields."""
         goal = GoalNode(
             objective_id=objective_id,
             description=description,
+            priority=priority,
+            urgency=urgency,
+            estimated_cost_ms=estimated_cost_ms,
+            success_probability=success_probability,
+            dependencies=dependencies or [],
             metadata=metadata or {},
         )
         result = await self._repo.create_goal(goal)
@@ -160,6 +173,8 @@ class GoalManager:
         self,
         objective_id: str,
         description: str,
+        priority: Priority = Priority.MEDIUM,
+        urgency: datetime | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> GoalNode:
         """Find the last incomplete goal for an objective, or create a new one."""
@@ -168,7 +183,80 @@ class GoalManager:
             if g.status in (GoalStatus.PENDING, GoalStatus.IN_PROGRESS):
                 logger.info("goal.resumed", goal_id=g.id, description=g.description)
                 return g
-        return await self.create_goal(objective_id, description, metadata)
+        return await self.create_goal(
+            objective_id, description,
+            priority=priority, urgency=urgency, metadata=metadata,
+        )
+
+    # ------------------------------------------------------------------
+    # Prioritisation
+    # ------------------------------------------------------------------
+
+    async def prioritize_goals(
+        self,
+        objective_id: str,
+        now: datetime | None = None,
+    ) -> list[PrioritizedGoal]:
+        """Return ready (non-blocked) goals sorted by composite priority score.
+
+        The highest-score goal is the one the system should work on next.
+        """
+        goals = await self._repo.list_ready_goals(objective_id)
+        now = now or datetime.now(timezone.utc)
+
+        scored: list[PrioritizedGoal] = []
+        for g in goals:
+            score = default_priority_score(
+                priority=g.priority,
+                urgency=g.urgency,
+                estimated_cost_ms=g.estimated_cost_ms,
+                success_probability=g.success_probability,
+                now=now,
+            )
+            reason = self._reason(g, score)
+            scored.append(PrioritizedGoal(goal=g, score=round(score, 3), reason=reason))
+
+        scored.sort(key=lambda pg: -pg.score)
+        return scored
+
+    async def get_next_goal(
+        self,
+        objective_id: str,
+        now: datetime | None = None,
+    ) -> GoalNode | None:
+        """Return the single highest-priority ready goal."""
+        ranked = await self.prioritize_goals(objective_id, now=now)
+        return ranked[0].goal if ranked else None
+
+    async def update_goal_estimates(
+        self,
+        goal_id: str,
+        estimated_cost_ms: float | None = None,
+        success_probability: float | None = None,
+    ) -> GoalNode | None:
+        """Update a goal's cost/success estimates (e.g. from PlanSimulator)."""
+        updates: dict[str, Any] = {}
+        if estimated_cost_ms is not None:
+            updates["estimated_cost_ms"] = estimated_cost_ms
+        if success_probability is not None:
+            updates["success_probability"] = success_probability
+        if not updates:
+            return await self._repo.get_goal(goal_id)
+        return await self._repo.update_goal(goal_id, **updates)
+
+    @staticmethod
+    def _reason(g: GoalNode, score: float) -> str:
+        parts = []
+        parts.append(f"priority={g.priority.value}")
+        if g.urgency:
+            parts.append(f"urgency={g.urgency.isoformat()}")
+        if g.estimated_cost_ms > 0:
+            parts.append(f"cost={g.estimated_cost_ms:.0f}ms")
+        if g.success_probability > 0:
+            parts.append(f"success={g.success_probability:.0%}")
+        if g.dependencies:
+            parts.append(f"deps={g.dependencies}")
+        return f"score={score:.2f} ({', '.join(parts)})"
 
     async def complete_goal(
         self,

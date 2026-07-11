@@ -1,6 +1,25 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.agents.models.policy import ExecutionMode
+
+
+@dataclass
+class AlternativeStrategy:
+    """An alternative strategy option with its own confidence score."""
+
+    name: str
+    strategy_summary: str
+    recommended_provider: str | None = None
+    recommended_model: str | None = None
+    recommended_tool_sequence: list[str] = field(default_factory=list)
+    expected_success_rate: float = 0.0
+    expected_latency_ms: float = 0.0
+    confidence: float = 0.0
+    source: str = "strategy_engine"
 
 
 @dataclass
@@ -26,9 +45,15 @@ class Strategy:
     expected_latency_ms: float = 0.0
     confidence: float = 0.0
 
+    # Alternative strategies with their own confidences
+    alternatives: list[AlternativeStrategy] = field(default_factory=list)
+
     # Fallback
     fallback_provider: str | None = None
     fallback_model: str | None = None
+
+    # Recommended execution mode (auto-selected by StrategyEngine)
+    recommended_mode: str | None = None
 
     # Warnings — anti-patterns / pitfalls to avoid
     warnings: list[str] = field(default_factory=list)
@@ -69,6 +94,15 @@ def format_strategy_for_prompt(strategy: Strategy) -> str:
     if strategy.confidence > 0:
         parts.append(f"Confidence: {strategy.confidence:.2f}")
 
+    # Show alternative strategies with their confidences
+    if strategy.alternatives:
+        parts.append("Alternative strategies:")
+        for alt in strategy.alternatives:
+            alt_pct = alt.confidence * 100
+            parts.append(f"  - {alt.name}: {alt_pct:.0f}% confidence")
+            if alt.strategy_summary:
+                parts.append(f"    {alt.strategy_summary}")
+
     if strategy.fallback_provider or strategy.fallback_model:
         fb = []
         if strategy.fallback_provider:
@@ -76,6 +110,9 @@ def format_strategy_for_prompt(strategy: Strategy) -> str:
         if strategy.fallback_model:
             fb.append(f"model={strategy.fallback_model}")
         parts.append(f"Fallback: {', '.join(fb)}")
+
+    if strategy.recommended_mode:
+        parts.append(f"Recommended execution mode: {strategy.recommended_mode}")
 
     if strategy.warnings:
         parts.append("Warnings:")

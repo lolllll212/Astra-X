@@ -17,6 +17,7 @@ from app.agents.models.goal import (
     MissionStatus,
     Objective,
     ObjectiveStatus,
+    Priority,
 )
 from app.database.models.goal import ActionModel, GoalModel, MissionModel, ObjectiveModel
 from app.database.repositories.base import BaseRepository
@@ -152,6 +153,11 @@ class GoalRepository:
             objective_id=goal.objective_id,
             description=goal.description,
             status=goal.status.value,
+            priority=goal.priority.value,
+            urgency=goal.urgency,
+            estimated_cost_ms=goal.estimated_cost_ms,
+            success_probability=goal.success_probability,
+            dependencies=goal.dependencies or None,
             plan_id=goal.plan_id,
             result_summary=goal.result_summary,
             error=goal.error,
@@ -180,6 +186,53 @@ class GoalRepository:
         )
         result = await self._session.execute(stmt)
         return [self._goal_to_domain(m) for m in result.scalars().all()]
+
+    async def list_goals_by_priority(
+        self,
+        objective_id: str,
+        status: str | None = None,
+        limit: int = 50,
+    ) -> list[GoalNode]:
+        """Return goals ordered by priority (critical first), then by urgency."""
+        order_col = GoalModel.priority.desc()
+        stmt = select(GoalModel).where(GoalModel.objective_id == objective_id)
+        if status:
+            stmt = stmt.where(GoalModel.status == status)
+        stmt = stmt.order_by(order_col, GoalModel.urgency.asc().nullslast()).limit(limit)
+        result = await self._session.execute(stmt)
+        return [self._goal_to_domain(m) for m in result.scalars().all()]
+
+    async def list_ready_goals(
+        self,
+        objective_id: str,
+        limit: int = 50,
+    ) -> list[GoalNode]:
+        """Return pending/in-progress goals whose dependencies are met."""
+        stmt = (
+            select(GoalModel)
+            .where(GoalModel.objective_id == objective_id)
+            .where(GoalModel.status.in_(["pending", "in_progress"]))
+            .order_by(GoalModel.created_at.desc())
+            .limit(limit)
+        )
+        result = await self._session.execute(stmt)
+        goals = [self._goal_to_domain(m) for m in result.scalars().all()]
+
+        # Fetch completed goal IDs for dependency checking.
+        completed = await self._session.execute(
+            select(GoalModel.id).where(
+                GoalModel.objective_id == objective_id,
+                GoalModel.status == "completed",
+            )
+        )
+        completed_ids = {row[0] for row in completed.all()}
+
+        ready = []
+        for g in goals:
+            if g.dependencies and not completed_ids.issuperset(g.dependencies):
+                continue
+            ready.append(g)
+        return ready
 
     async def update_goal(
         self,
@@ -268,6 +321,11 @@ class GoalRepository:
             objective_id=model.objective_id,
             description=model.description,
             status=GoalStatus(model.status),
+            priority=Priority(model.priority) if model.priority else Priority.MEDIUM,
+            urgency=model.urgency,
+            estimated_cost_ms=model.estimated_cost_ms or 0.0,
+            success_probability=model.success_probability or 0.0,
+            dependencies=list(model.dependencies) if model.dependencies else [],
             plan_id=model.plan_id,
             result_summary=model.result_summary or "",
             error=model.error,

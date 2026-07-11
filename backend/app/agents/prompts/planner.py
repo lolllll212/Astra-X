@@ -58,6 +58,21 @@ State-aware planning:
 - Example: if the project is in ``Dirty`` state and running tests should move it to
   ``Tests Passing``, include that transition in the testing task's metadata.
 
+State change reasoning:
+- You will also receive a **state narrative** describing the chronological sequence
+  of state transitions that have already occurred. Study this narrative to understand
+  what actions have been taken and what the results were.
+- **Dwell times** tell you how long the entity has been in each state. Long dwell times
+  in a "waiting" state (e.g. "Code Review", "Ready for Merge") may indicate a bottleneck
+  that your plan should address directly (e.g. add a task to follow up).
+- **Suggested next steps** provide reasoned recommendations for what state should come
+  next. Use these as guidance when choosing which ``intended_transition`` to include
+  in your tasks.
+- Consider the typical software delivery pipeline when reasoning about state changes:
+  Repository → Tests Failed → Fix Applied → Tests Passing → Ready To Deploy.
+  If the entity is stuck in one state, your plan should include tasks that advance it
+  to the next logical state.
+
 Capability-based planning:
 - Instead of specifying a concrete tool name, specify the **capability** the
   task needs (e.g. "search_web", "calculate", "read_file", "write_file",

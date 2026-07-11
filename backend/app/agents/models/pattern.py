@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -133,3 +133,27 @@ class ExecutionPattern(BaseModel):
     updated_at: datetime | None = Field(
         default=None,
     )
+
+    def apply_confidence_decay(self, decay_factor: float = 0.9) -> float:
+        """Apply confidence decay when pattern fails or stops being used.
+
+        Args:
+            decay_factor: Multiplier for confidence decay (default 0.9 = 10% decay).
+
+        Returns:
+            The new decayed confidence value.
+        """
+        self.avg_confidence = max(0.0, self.avg_confidence * decay_factor)
+        self.last_reflection_confidence = max(0.0, self.last_reflection_confidence * decay_factor)
+        return self.avg_confidence
+
+    def record_failure(self, decay_factor: float = 0.95) -> None:
+        """Record a failed application and decay confidence.
+
+        Args:
+            decay_factor: Multiplier for confidence decay (default 0.95 = 5% decay per failure).
+        """
+        self.total_count += 1
+        self.avg_confidence = max(0.0, self.avg_confidence * decay_factor)
+        self.last_reflection_confidence = max(0.0, self.last_reflection_confidence * decay_factor)
+        self.updated_at = datetime.now(timezone.utc)

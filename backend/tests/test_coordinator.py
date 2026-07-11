@@ -148,7 +148,7 @@ class TestCoordinator:
         planner = _mock_planner()
         mm = _mock_memory_manager(context="mem")
         coord = make_coordinator(planner=planner, memory_manager=mm)
-        await coord.run(conversation_id="conv1", goal="test")
+        await coord.run(conversation_id="conv1", goal="test", policy="balanced")
         _, kwargs = planner.plan.call_args
         assert kwargs["goal"] == "test"
         assert kwargs["memory_context"] == "mem"
@@ -227,7 +227,7 @@ class TestCoordinator:
             executor=executor,
             reflection=reflection,
         )
-        result = await coord.run(conversation_id="conv1", goal="test")
+        result = await coord.run(conversation_id="conv1", goal="test", policy="balanced")
         assert result.state.has_errors
         assert result.final_decision is ReflectionDecision.ABORT
 
@@ -258,7 +258,7 @@ class TestCoordinator:
             reflection=reflection,
             llm_router=llm_router,
         )
-        result = await coord.run(conversation_id="conv1", goal="test")
+        result = await coord.run(conversation_id="conv1", goal="test", policy="balanced")
         assert result.state.is_exhausted
         assert result.iterations == 5
 

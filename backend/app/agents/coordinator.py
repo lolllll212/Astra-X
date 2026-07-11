@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
+from datetime import datetime
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
@@ -30,6 +31,7 @@ from app.agents.goal_manager import GoalManager
 from app.agents.learning_manager import LearningManager
 from app.agents.memory_manager import MemoryManager
 from app.agents.models.execution import ReflectionDecision, ReflectionResult
+from app.agents.models.goal import Priority
 from app.agents.models.policy import ExecutionMode, ExecutionPolicy
 from app.agents.models.plan import Plan
 from app.agents.models.strategy import Strategy
@@ -152,6 +154,9 @@ class Coordinator:
         policy: ExecutionPolicy | str | None = None,
         objective_id: str | None = None,
         goal_description: str | None = None,
+        goal_priority: Priority = Priority.MEDIUM,
+        goal_urgency: datetime | None = None,
+        goal_dependencies: list[str] | None = None,
     ) -> CoordinatorResult:
         """Execute the full agent lifecycle for a user goal.
 
@@ -166,12 +171,22 @@ class Coordinator:
                 in the goal hierarchy (persistent across sessions).
             goal_description: Human-readable label for the goal node
                 (defaults to *goal* when not set).
+            goal_priority: Priority level for this goal.
+            goal_urgency: Deadline for this goal.
+            goal_dependencies: Goal IDs that must complete first.
 
         Returns:
             The final answer, plan, and execution state.
         """
+        # Build strategy early so it can influence policy selection.
+        strategy: Strategy = await self._strategy_engine.build_strategy(goal)
+
         if policy is None:
-            resolved_policy = ExecutionMode.BALANCED.policy()
+            mode = strategy.recommended_mode
+            if mode is not None:
+                resolved_policy = ExecutionMode(mode).policy()
+            else:
+                resolved_policy = ExecutionMode.BALANCED.policy()
         elif isinstance(policy, str):
             resolved_policy = ExecutionMode(policy).policy()
         else:
@@ -182,6 +197,9 @@ class Coordinator:
             desc = goal_description or goal[:200]
             goal_node = await self._goal_manager.start_or_resume_goal(
                 objective_id, desc,
+                priority=goal_priority,
+                urgency=goal_urgency,
+                metadata={"dependencies": goal_dependencies} if goal_dependencies else None,
             )
             goal_node_id = goal_node.id
 
@@ -204,9 +222,13 @@ class Coordinator:
                 ) or ""
             memory_retrieval_duration.observe(time.monotonic() - _t0)
 
-            # Build structured strategy guidance.
-            with tracer.span("Strategy Engine", category="learning"):
-                strategy: Strategy = await self._strategy_engine.build_strategy(goal)
+            # Log the strategy (built above) but don't rebuild.
+            logger.info(
+                "coordinator.strategy",
+                domain=strategy.goal_domain,
+                recommended_mode=strategy.recommended_mode,
+                pattern_count=strategy.source_pattern_count,
+            )
 
             # Main agent loop.
             while not state.is_exhausted:
@@ -288,6 +310,14 @@ class Coordinator:
                         notes=sim.notes,
                     )
 
+                    # Feed simulation estimates back into the goal for prioritisation.
+                    if goal_node_id is not None and self._goal_manager is not None:
+                        await self._goal_manager.update_goal_estimates(
+                            goal_node_id,
+                            estimated_cost_ms=sim.total_estimated_cost_ms,
+                            success_probability=sim.overall_success_probability,
+                        )
+
                 # Step 2 — Execute tasks with retry + checkpoint support.
                 while not graph.is_complete():
                     ready_tasks = graph.get_ready()
@@ -332,7 +362,6 @@ class Coordinator:
                             state.reflections[task.id] = assessment
                         else:
                             assessment = ReflectionResult(
-                                task_id=task.id,
                                 decision=ReflectionDecision.ACCEPT,
                                 confidence=0.5,
                                 reason="Reflection disabled by policy.",
