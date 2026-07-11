@@ -30,11 +30,13 @@ from app.agents.learning_manager import LearningManager
 from app.agents.memory_manager import MemoryManager
 from app.agents.models.execution import ReflectionDecision, ReflectionResult
 from app.agents.models.plan import Plan
+from app.agents.models.strategy import Strategy
 from app.agents.models.task import Task, TaskStatus
 from app.agents.plan_simulator import PlanSimulator
 from app.agents.planner import Planner
 from app.agents.reflection import Reflection
 from app.agents.state import AgentState
+from app.agents.strategy_engine import StrategyEngine
 from app.agents.task_graph import ExecutionGraph, TaskGraph
 from app.core.logging import get_logger
 from app.core.tracing import get_tracer
@@ -124,6 +126,12 @@ class Coordinator:
         self._plan_simulator = plan_simulator
         self._metrics_tracker = metrics_tracker
         self._config = config or AgentConfig()
+        self._strategy_engine = StrategyEngine(
+            learning_manager=learning_manager,
+            experience_graph=learning_manager._experience_graph if learning_manager else None,
+            world_model=learning_manager._world_model if learning_manager else None,
+            metrics_tracker=metrics_tracker,
+        )
 
     async def run(
         self,
@@ -155,24 +163,9 @@ class Coordinator:
                 ) or ""
             memory_retrieval_duration.observe(time.monotonic() - _t0)
 
-            # Load patterns context from past executions.
-            patterns_context = ""
-            if self._learning_manager is not None:
-                with tracer.span("Pattern Retrieval", category="learning"):
-                    patterns_context = await self._learning_manager.get_lessons(goal)
-
-            # Append evidence-based provider recommendations.
-            if self._metrics_tracker is not None:
-                patterns_context += "\n\n"
-                patterns_context += self._metrics_tracker.best_for_profile_with_evidence(
-                    task_type=goal[:60],
-                )
-
-            # Append Experience Graph best workflow.
-            if self._learning_manager is not None:
-                wf = self._learning_manager.best_workflow_for_domain(goal[:60])
-                if wf:
-                    patterns_context += "\n\nBest workflow from experience:\n" + wf
+            # Build structured strategy guidance.
+            with tracer.span("Strategy Engine", category="learning"):
+                strategy: Strategy = await self._strategy_engine.build_strategy(goal)
 
             # Main agent loop.
             while not state.is_exhausted:
@@ -183,13 +176,13 @@ class Coordinator:
                     goal=goal,
                 )
 
-                # Step 1 — Plan (always uses memory + patterns context).
+                # Step 1 — Plan (always uses memory + strategy).
                 _t0 = time.monotonic()
                 with tracer.span("Planner", category="agent"):
                     plan = await self._planner.plan(
                         goal=goal,
                         memory_context=state.memory_context,
-                        patterns_context=patterns_context,
+                        strategy=strategy,
                     )
 
                 # Step 1a — Generate alternative plans and pick the best via simulation.
@@ -201,7 +194,7 @@ class Coordinator:
                             alt = await self._planner.plan(
                                 goal=goal,
                                 memory_context=state.memory_context,
-                                patterns_context=patterns_context,
+                                strategy=strategy,
                                 temperature=alt_temp,
                             )
                             plans.append(alt)

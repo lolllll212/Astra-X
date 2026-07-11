@@ -16,6 +16,7 @@ from uuid import uuid4
 
 from app.agents.base import Agent, AgentConfig
 from app.agents.models.plan import Plan
+from app.agents.models.strategy import Strategy, format_strategy_for_prompt
 from app.agents.models.task import Task
 from app.agents.prompts.planner import PLANNER_SYSTEM_PROMPT
 from app.core.logging import get_logger
@@ -57,6 +58,7 @@ class Planner(Agent):
         goal: str,
         memory_context: str = "",
         patterns_context: str = "",
+        strategy: Strategy | None = None,
         temperature: float | None = None,
     ) -> Plan:
         """Decompose *goal* into a plan using the LLM.
@@ -68,7 +70,8 @@ class Planner(Agent):
         Args:
             goal: The user's request.
             memory_context: Relevant memories retrieved for this goal.
-            patterns_context: Lessons learned from past executions.
+            patterns_context: Lessons learned from past executions (deprecated).
+            strategy: Structured strategy guidance (preferred over patterns_context).
             temperature: Optional override for generation temperature
                 (used for generating alternative plan variants).
 
@@ -78,7 +81,7 @@ class Planner(Agent):
         Raises:
             GenerationError: If the LLM fails to produce a valid plan.
         """
-        messages = self._build_messages(goal, memory_context, patterns_context)
+        messages = self._build_messages(goal, memory_context, patterns_context, strategy)
 
         if self._model_selector is not None:
             model, provider = await self._model_selector.select_for_planning()
@@ -114,6 +117,7 @@ class Planner(Agent):
         goal: str,
         memory_context: str,
         patterns_context: str = "",
+        strategy: Strategy | None = None,
     ) -> list[Message]:
         """Build the message list for the planner LLM call.
 
@@ -123,7 +127,8 @@ class Planner(Agent):
         Args:
             goal: The user goal.
             memory_context: Relevant memories retrieved for this goal.
-            patterns_context: Lessons learned from past executions.
+            patterns_context: Lessons learned from past executions (deprecated).
+            strategy: Structured strategy guidance (preferred).
 
         Returns:
             A list of system and user messages.
@@ -131,7 +136,10 @@ class Planner(Agent):
         parts: list[str] = []
         if memory_context:
             parts.append(f"Relevant memories:\n{memory_context}")
-        if patterns_context:
+        if strategy is not None:
+            parts.append("Strategy guidance:")
+            parts.append(format_strategy_for_prompt(strategy))
+        elif patterns_context:
             parts.append(patterns_context)
         parts.append(f"Goal: {goal}")
         content = "\n\n".join(parts)
