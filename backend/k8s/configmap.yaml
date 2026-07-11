@@ -20,7 +20,6 @@ data:
   ASTRA_CORS_ORIGINS: "https://astra-x.example.com"
   ASTRA_CORS_ALLOW_CREDENTIALS: "true"
   ASTRA_RATE_LIMIT_REQUESTS_PER_MINUTE: "60"
-  ASTRA_DATABASE_URL: "postgresql+asyncpg://astra:astra@postgres:5432/astra"
   ASTRA_DATABASE_ECHO: "false"
   ASTRA_DATABASE_POOL_SIZE: "10"
   ASTRA_DEFAULT_LLM_PROVIDER: "ollama"

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from enum import StrEnum
 from functools import lru_cache
 
@@ -175,7 +176,8 @@ class Settings(BaseSettings):
         default=SecretStr(_DEFAULT_DEV_SECRET_KEY),
         description=(
             "Cryptographic secret used for signing (e.g. sessions, tokens). "
-            "Must be overridden with a strong, unique value in production."
+            "Must be a 64-character hex string in production. "
+            "Generate with: python -c \"import secrets; print(secrets.token_hex(32))\""
         ),
     )
     allowed_hosts: list[str] = Field(
@@ -392,6 +394,38 @@ class Settings(BaseSettings):
         """Validate the optional OpenAI-compatible base URL, if one is set."""
         return _ensure_http_scheme(value, info.field_name or "url")
 
+    # --- _FILE env var support (Docker Secrets / Vault agent) ---------------------------
+
+    @model_validator(mode="before")
+    @classmethod
+    def _resolve_secret_files(cls, values: dict[str, object]) -> dict[str, object]:
+        """Override sensitive fields from ``<FIELD>_FILE`` env vars.
+
+        If ``ASTRA_SECRET_KEY_FILE`` is set (Docker secrets / Vault agent
+        pattern), the file is read and its content replaces the inline
+        ``secret_key`` value. This keeps credentials out of environment
+        blocks and compose files.
+        """
+        for env_suffix, field_name in [("SECRET_KEY_FILE", "secret_key")]:
+            file_path = os.environ.get(f"ASTRA_{env_suffix}")
+            if not file_path:
+                continue
+            try:
+                with open(file_path, encoding="utf-8") as f:
+                    value = f.read().strip()
+            except (FileNotFoundError, PermissionError, OSError) as exc:
+                raise ValueError(
+                    f"Cannot read secret file {file_path!r} "
+                    f"(set via ASTRA_{env_suffix}): {exc}"
+                ) from exc
+            if not value:
+                raise ValueError(
+                    f"Secret file {file_path!r} "
+                    f"(set via ASTRA_{env_suffix}) is empty"
+                )
+            values[field_name] = value
+        return values
+
     # --- Cross-field, production-safety validation -----------------------------------------
 
     @model_validator(mode="after")
@@ -415,8 +449,14 @@ class Settings(BaseSettings):
         if self.secret_key.get_secret_value() == _DEFAULT_DEV_SECRET_KEY:
             violations.append("secret_key must be overridden from its development default")
 
-        if len(self.secret_key.get_secret_value()) < 32:
-            violations.append("secret_key must be at least 32 characters in production")
+        secret_value = self.secret_key.get_secret_value()
+        if len(secret_value) < 64:
+            violations.append(
+                "secret_key must be a 64-character hex string in production "
+                "(generate with: python -c \"import secrets; print(secrets.token_hex(32))\")"
+            )
+        elif not all(c in "0123456789abcdef" for c in secret_value):
+            violations.append("secret_key must be a valid 64-character hex string in production")
 
         if "*" in self.allowed_hosts:
             violations.append("allowed_hosts must not contain '*' in production")

@@ -1,11 +1,14 @@
 # Astra X — development docker-compose
 #
 # Spins up PostgreSQL, Redis, and the app.
-# Copy .env.example → .env and adjust ASTRA_DATABASE_URL to:
-#   postgresql+asyncpg://astra:astra@db:5432/astra
 #
-# Start:   docker compose up -d --build
-# Stop:    docker compose down -v   (⚠ drops volumes)
+# 1. Copy .env.example → .env and set:
+#      ASTRA_POSTGRES_PASSWORD=<secure-random-password>
+#      ASTRA_DATABASE_URL=postgresql+asyncpg://astra:${ASTRA_POSTGRES_PASSWORD}@db:5432/astra
+#      ASTRA_SECRET_KEY=$(python -c "import secrets; print(secrets.token_hex(32))")
+#
+# 2. Start:   docker compose up -d --build
+# 3. Stop:    docker compose down -v   (⚠ drops volumes)
 
 x-logging: &default-logging
   driver: "json-file"
@@ -24,7 +27,7 @@ services:
       - .env
     environment:
       ASTRA_ENVIRONMENT: "${ASTRA_ENVIRONMENT:-development}"
-      ASTRA_DATABASE_URL: "postgresql+asyncpg://astra:astra@db:5432/astra"
+      ASTRA_DATABASE_URL: "postgresql+asyncpg://astra:${ASTRA_POSTGRES_PASSWORD:-astra}@db:5432/astra"
       ASTRA_HOST: "0.0.0.0"
       ASTRA_RATE_LIMIT_REQUESTS_PER_MINUTE: "${ASTRA_RATE_LIMIT_REQUESTS_PER_MINUTE:-1000}"
     depends_on:
@@ -45,7 +48,7 @@ services:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: astra
-      POSTGRES_PASSWORD: astra
+      POSTGRES_PASSWORD: "${ASTRA_POSTGRES_PASSWORD:-astra}"
       POSTGRES_DB: astra
     ports:
       - "5432:5432"

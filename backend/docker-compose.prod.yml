@@ -24,6 +24,12 @@ services:
         reservations:
           cpus: "0.5"
           memory: "512M"
+    secrets:
+      - astra_secret_key
+      - astra_database_url
+    environment:
+      ASTRA_SECRET_KEY_FILE: /run/secrets/astra_secret_key
+      ASTRA_DATABASE_URL_FILE: /run/secrets/astra_database_url
     logging:
       driver: "local"
       options:

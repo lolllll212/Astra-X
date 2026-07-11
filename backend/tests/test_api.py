@@ -194,9 +194,10 @@ def _make_mock_settings(**overrides: Any) -> Settings:
     """Create a Settings instance with default test overrides.
 
     Defaults to testing environment. When overridden to production,
-    callers must also provide a 32+ char secret_key and non-wildcard
+    callers must also provide a 64-char hex secret_key and non-wildcard
     allowed_hosts/cors_origins to pass the production-safety validator.
     """
+    _VALID_64_HEX = "ab" + "12" * 31  # 64-char hex string for tests
     kwargs: dict[str, Any] = {
         "database_url": "sqlite+aiosqlite://",
         "environment": "testing",
@@ -208,8 +209,8 @@ def _make_mock_settings(**overrides: Any) -> Settings:
         kwargs.setdefault("allowed_hosts", ["example.com"])
         kwargs.setdefault("cors_origins", ["https://example.com"])
         sk = kwargs.get("secret_key", _DEFAULT_DEV_SECRET_KEY)
-        if isinstance(sk, str) and len(sk) < 32:
-            kwargs["secret_key"] = sk + "x" * (32 - len(sk))
+        if isinstance(sk, str) and (len(sk) < 64 or not all(c in "0123456789abcdef" for c in sk)):
+            kwargs["secret_key"] = _VALID_64_HEX
     return Settings(**kwargs)
 
 
@@ -339,11 +340,13 @@ class TestRateLimitMiddleware:
 
 
 class TestAuthenticationMiddleware:
+    _VALID_64_HEX = "ab" + "12" * 31  # 64-char hex string for tests
+
     def test_exempt_paths_pass_without_auth(self) -> None:
         app = _make_minimal_app(AuthenticationMiddleware)
         client = TestClient(app)
 
-        SECRET = _DEFAULT_DEV_SECRET_KEY + "-extra"  # must differ from dev default
+        SECRET = self._VALID_64_HEX
         settings = _make_mock_settings(environment="production", secret_key=SECRET, allowed_hosts=["example.com"], cors_origins=["https://example.com"])
         app.state.settings = settings
 
@@ -365,7 +368,7 @@ class TestAuthenticationMiddleware:
         app = _make_minimal_app(AuthenticationMiddleware)
         client = TestClient(app)
 
-        SECRET = "x" * 32
+        SECRET = self._VALID_64_HEX
         settings = _make_mock_settings(environment="production", secret_key=SECRET, allowed_hosts=["example.com"], cors_origins=["https://example.com"])
         app.state.settings = settings
 
@@ -377,7 +380,7 @@ class TestAuthenticationMiddleware:
         app = _make_minimal_app(AuthenticationMiddleware)
         client = TestClient(app)
 
-        SECRET = "x" * 32
+        SECRET = self._VALID_64_HEX
         settings = _make_mock_settings(environment="production", secret_key=SECRET, allowed_hosts=["example.com"], cors_origins=["https://example.com"])
         app.state.settings = settings
 
@@ -388,7 +391,7 @@ class TestAuthenticationMiddleware:
         app = _make_minimal_app(AuthenticationMiddleware)
         client = TestClient(app)
 
-        SECRET = "x" * 32
+        SECRET = self._VALID_64_HEX
         settings = _make_mock_settings(environment="production", secret_key=SECRET, allowed_hosts=["example.com"], cors_origins=["https://example.com"])
         app.state.settings = settings
 
@@ -400,7 +403,7 @@ class TestAuthenticationMiddleware:
         app = _make_minimal_app(AuthenticationMiddleware)
         client = TestClient(app)
 
-        SECRET = "x" * 32
+        SECRET = self._VALID_64_HEX
         settings = _make_mock_settings(environment="production", secret_key=SECRET, allowed_hosts=["example.com"], cors_origins=["https://example.com"])
         app.state.settings = settings
 
