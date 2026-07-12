@@ -13,7 +13,7 @@ from pydantic import (
     model_validator,
 )
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
-from pydantic_settings.sources import DotEnvSettingsSource
+from pydantic_settings.sources import DotEnvSettingsSource, EnvSettingsSource
 
 
 class Environment(StrEnum):
@@ -128,6 +128,29 @@ class CsvDotEnvSettingsSource(DotEnvSettingsSource):
         return super().decode_complex_value(field_name, field, value)
 
 
+class CsvEnvSettingsSource(EnvSettingsSource):
+    """Custom env var settings source that treats list fields as CSV, not JSON.
+
+    The default EnvSettingsSource tries to parse values that look like
+    lists/dicts as JSON. This breaks comma-separated values in env vars.
+    This subclass overrides that behavior for known CSV list fields.
+    """
+
+    CSV_LIST_FIELDS: ClassVar[set[str]] = {"allowed_hosts", "cors_origins"}
+
+    def decode_complex_value(
+        self,
+        field_name: str,
+        field: Any,
+        value: str,
+    ) -> Any:
+        # For CSV list fields, return the raw string to be parsed by BeforeValidator
+        if field_name in self.CSV_LIST_FIELDS:
+            return value
+        # For other fields, use default JSON parsing
+        return super().decode_complex_value(field_name, field, value)
+
+
 class Settings(BaseSettings):
     """Validated, environment-aware configuration for the Astra X backend.
 
@@ -147,7 +170,7 @@ class Settings(BaseSettings):
         validate_default=True,
     )
 
-    # --- Custom settings source to handle CSV lists in .env files ---
+    # --- Custom settings source to handle CSV lists in .env files and env vars ---
     @classmethod
     def settings_customise_sources(
         cls,
@@ -159,7 +182,7 @@ class Settings(BaseSettings):
     ) -> tuple[PydanticBaseSettingsSource, ...]:
         return (
             init_settings,
-            env_settings,
+            CsvEnvSettingsSource(settings_cls),
             CsvDotEnvSettingsSource(settings_cls),
             file_secret_settings,
         )
