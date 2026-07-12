@@ -173,7 +173,22 @@ class PrometheusMetricsMiddleware(BaseHTTPMiddleware):
             in_flight_requests.labels(method=method).dec()
 
 
-_EXEMPT_PATHS = {"/health", "/metrics", "/api/v1/health", "/api/v1/metrics", "/docs", "/openapi.json", "/redoc"}
+def _build_exempt_paths(settings) -> set[str]:
+    """Build the set of paths exempt from auth/rate-limit based on settings."""
+    prefix = getattr(settings, "api_v1_prefix", "/api/v1")
+    return {
+        "/health",
+        "/metrics",
+        "/docs",
+        "/redoc",
+        "/openapi.json",
+        "/favicon.ico",
+        f"{prefix}/health",
+        f"{prefix}/metrics",
+        f"{prefix}/docs",
+        f"{prefix}/redoc",
+        f"{prefix}/openapi.json",
+    }
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
@@ -192,12 +207,15 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         call_next: Callable[[Request], Awaitable[Response]],
     ) -> Response:
         path = request.url.path.rstrip("/")
-        if any(path == exempt or path.startswith(exempt + "/") for exempt in _EXEMPT_PATHS):
-            return await call_next(request)
 
         settings = getattr(request.app.state, "settings", None)
         env = getattr(settings, "environment", None)
         limit = 1000 if env == "development" else getattr(settings, "rate_limit_requests_per_minute", 60)
+
+        exempt_prefixes = self._get_exempt_prefixes(settings)
+
+        if any(path == exempt or path.startswith(exempt + "/") for exempt in exempt_prefixes):
+            return await call_next(request)
 
         client_ip = request.client.host if request.client else "unknown"
         auth: str | None = request.headers.get("Authorization", "")
@@ -220,6 +238,21 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         bucket.append(now)
         return await call_next(request)
+
+    def _get_exempt_prefixes(self, settings) -> set[str]:
+        """Build exempt path prefixes from settings."""
+        prefix = getattr(settings, "api_v1_prefix", "/api/v1")
+        return {
+            "/health",
+            "/metrics",
+            "/favicon.ico",
+            f"{prefix}/health",
+            f"{prefix}/metrics",
+            f"{prefix}/docs",
+            f"{prefix}/openapi.json",
+            f"{prefix}/redoc",
+        }
+
 """Path prefixes that do not require authentication."""
 
 
@@ -240,14 +273,16 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
     ) -> Response:
         path = request.url.path.rstrip("/")
 
-        if any(path == exempt or path.startswith(exempt + "/") for exempt in _EXEMPT_PATHS):
-            return await call_next(request)
-
         settings = getattr(request.app.state, "settings", None)
         env = getattr(settings, "environment", None)
 
         # Skip auth in development for local tooling convenience.
         if env == "development":
+            return await call_next(request)
+
+        exempt_prefixes = self._get_exempt_prefixes(settings)
+
+        if any(path == exempt or path.startswith(exempt + "/") for exempt in exempt_prefixes):
             return await call_next(request)
 
         auth: str | None = request.headers.get("Authorization")
@@ -274,3 +309,17 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
                 )
 
         return await call_next(request)
+
+    def _get_exempt_prefixes(self, settings) -> set[str]:
+        """Build exempt path prefixes from settings."""
+        prefix = getattr(settings, "api_v1_prefix", "/api/v1")
+        return {
+            "/health",
+            "/metrics",
+            "/favicon.ico",
+            f"{prefix}/health",
+            f"{prefix}/metrics",
+            f"{prefix}/docs",
+            f"{prefix}/redoc",
+            f"{prefix}/openapi.json",
+        }
