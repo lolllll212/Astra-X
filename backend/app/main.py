@@ -72,9 +72,9 @@ app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
     lifespan=lifespan,
-    docs_url=f"{settings.api_v1_prefix}/docs" if settings.is_development else None,
-    redoc_url=f"{settings.api_v1_prefix}/redoc" if settings.is_development else None,
-    openapi_url=f"{settings.api_v1_prefix}/openapi.json" if settings.is_development else None,
+    docs_url=f"{settings.api_v1_prefix}/docs",
+    redoc_url=f"{settings.api_v1_prefix}/redoc",
+    openapi_url=f"{settings.api_v1_prefix}/openapi.json",
 )
 
 # Register API-layer lifecycle hooks directly. We don't import
