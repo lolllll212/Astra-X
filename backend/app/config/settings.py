@@ -78,7 +78,7 @@ def _split_csv(value: object) -> object:
     return value
 
 
-def _ensure_http_scheme(value: str | None, field_name: str) -> str | None:
+def _ensure_http_scheme(value: object, field_name: str) -> object:
     """Validate that an optional URL string uses an explicit http(s) scheme.
 
     Args:
@@ -95,6 +95,8 @@ def _ensure_http_scheme(value: str | None, field_name: str) -> str | None:
     """
     if value is None:
         return None
+    if not isinstance(value, str):
+        return value
     if not value.startswith(("http://", "https://")):
         raise ValueError(
             f"{field_name} must be an absolute URL starting with 'http://' "
@@ -326,6 +328,29 @@ class Settings(BaseSettings):
         description="Embedding vector dimensionality",
     )
 
+    # --- Observability ---
+    metrics_enabled: bool = Field(
+        default=True,
+        description="Enable Prometheus metrics exposition.",
+    )
+    metrics_prefix: str = Field(
+        default="astra_x",
+        min_length=1,
+        description="Prefix for all metric names (e.g., 'astra_x_http_requests_total').",
+    )
+    otel_exporter_otlp_endpoint: str = Field(
+        default="",
+        description="OTLP endpoint for OpenTelemetry exporter (empty = disabled).",
+    )
+
+    # --- Security ---
+    prompt_injection_block_threshold: float = Field(
+        default=0.85,
+        ge=0.0,
+        le=1.0,
+        description="Threshold above which prompt injection attempts are blocked.",
+    )
+
     # --- Feature flags ---
     enable_background_tasks: bool = Field(
         default=True,
@@ -366,7 +391,7 @@ class Settings(BaseSettings):
     @classmethod
     def _validate_provider_url(cls, value: object, info: ValidationInfo) -> object:
         """Validate that provider URLs have explicit http(s) scheme."""
-        return _ensure_http_scheme(value, info.field_name)
+        return _ensure_http_scheme(value, info.field_name or "unknown_field")
 
     @field_validator("embedding_model", mode="before")
     @classmethod
@@ -418,39 +443,10 @@ class Settings(BaseSettings):
 
         return self
 
-
-class Environment(StrEnum):
-    """The runtime environment the application is executing in.
-
-    Used to gate environment-specific defaults and safety checks (e.g.
-    refusing to start in production with debug mode enabled).
-    """
-
-    DEVELOPMENT = "development"
-    TESTING = "testing"
-    PRODUCTION = "production"
-
-
-class LogLevel(StrEnum):
-    """Supported structlog/stdlib logging levels."""
-
-    DEBUG = "DEBUG"
-    INFO = "INFO"
-    WARNING = "WARNING"
-    ERROR = "ERROR"
-    CRITICAL = "CRITICAL"
-
-
-class LogFormat(StrEnum):
-    """Output format for structured logs.
-
-    ``CONSOLE`` is human-readable and colorized, intended for local
-    development. ``JSON`` emits machine-parsable structured logs, intended
-    for production log aggregation.
-    """
-
-    CONSOLE = "console"
-    JSON = "json"
+    @property
+    def is_development(self) -> bool:
+        """True when running in development or testing environment."""
+        return self.environment in (Environment.DEVELOPMENT, Environment.TESTING)
 
 
 _DEFAULT_DEV_SECRET_KEY = "dev-secret-key-change-this-in-production-please"

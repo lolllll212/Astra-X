@@ -116,7 +116,7 @@ from app.api.schemas.provider import (
     ProviderUpdateRequest,
 )
 from app.api.schemas.system import ConfigInfo, MetricsResponse, VersionInfo
-from app.config.settings import _DEFAULT_DEV_SECRET_KEY, Environment, Settings
+from app.config.settings import Environment, Settings
 from app.core.exceptions import (
     AstraError,
     ConflictError,
@@ -198,16 +198,20 @@ def _make_mock_settings(**overrides: Any) -> Settings:
     allowed_hosts/cors_origins to pass the production-safety validator.
     """
     _VALID_64_HEX = "ab" + "12" * 31  # 64-char hex string for tests
+    _DEFAULT_DEV_SECRET_KEY = "dev-secret-key-change-this-in-production-please"
     kwargs: dict[str, Any] = {
         "database_url": "sqlite+aiosqlite://",
         "environment": "testing",
         "secret_key": _DEFAULT_DEV_SECRET_KEY,
         "rate_limit_requests_per_minute": 60,
+        "debug": False,
     }
     kwargs.update(overrides)
-    if kwargs.get("environment") is Environment.PRODUCTION:
+    env = kwargs.get("environment")
+    if env in (Environment.PRODUCTION, "production"):
         kwargs.setdefault("allowed_hosts", ["example.com"])
         kwargs.setdefault("cors_origins", ["https://example.com"])
+        kwargs.setdefault("debug", False)
         sk = kwargs.get("secret_key", _DEFAULT_DEV_SECRET_KEY)
         if isinstance(sk, str) and (len(sk) < 64 or not all(c in "0123456789abcdef" for c in sk)):
             kwargs["secret_key"] = _VALID_64_HEX
