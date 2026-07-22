@@ -23,6 +23,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.middleware.base import BaseHTTPMiddleware
+
+
+class HostLoggerMiddleware(BaseHTTPMiddleware):
+    """Temporarily log the Host header for debugging."""
+    async def dispatch(self, request, call_next):
+        print("HOST =", request.headers.get("host"))
+        return await call_next(request)
 
 from app.api.errors import llm_error_handler, unhandled_error_handler
 from app.api.middleware import (
@@ -130,6 +138,9 @@ app.add_middleware(
     allow_credentials=settings.cors_allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
+)
+app.add_middleware(
+    HostLoggerMiddleware,
 )
 app.add_middleware(
     TrustedHostMiddleware,
