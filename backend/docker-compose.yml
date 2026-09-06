@@ -1,0 +1,84 @@
+# Astra X — development docker-compose
+#
+# Spins up PostgreSQL, Redis, and the app.
+#
+# 1. Copy .env.example → .env and set:
+#      ASTRA_POSTGRES_PASSWORD=<secure-random-password>
+#      ASTRA_DATABASE_URL=postgresql+asyncpg://astra:${ASTRA_POSTGRES_PASSWORD}@db:5432/astra
+#      ASTRA_SECRET_KEY=$(python -c "import secrets; print(secrets.token_hex(32))")
+#
+# 2. Start:   docker compose up -d --build
+# 3. Stop:    docker compose down -v   (⚠ drops volumes)
+
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      ASTRA_ENVIRONMENT: "${ASTRA_ENVIRONMENT:-development}"
+      ASTRA_DATABASE_URL: "postgresql+asyncpg://astra:${ASTRA_POSTGRES_PASSWORD:-astra}@db:5432/astra"
+      ASTRA_HOST: "0.0.0.0"
+      ASTRA_RATE_LIMIT_REQUESTS_PER_MINUTE: "${ASTRA_RATE_LIMIT_REQUESTS_PER_MINUTE:-1000}"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    logging: *default-logging
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: astra
+      POSTGRES_PASSWORD: "${ASTRA_POSTGRES_PASSWORD:-astra}"
+      POSTGRES_DB: astra
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U astra -d astra"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    logging: *default-logging
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    logging: *default-logging
+
+volumes:
+  pgdata:
+    driver: local
+  redis_data:
+    driver: local

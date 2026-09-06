@@ -1,0 +1,355 @@
+{
+  "__inputs": [],
+  "__requires": [],
+  "title": "Astra X — Agent & LLM Performance",
+  "uid": "astra_x_agent_perf",
+  "schemaVersion": 39,
+  "version": 1,
+  "tags": ["astra-x", "agents", "llm"],
+  "timezone": "browser",
+  "editable": true,
+  "panels": [
+    {
+      "id": 1,
+      "title": "Average Planning Time",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 4, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "rate(astra_x_planning_duration_seconds_sum[5m]) / rate(astra_x_planning_duration_seconds_count[5m])",
+          "legendFormat": "avg planning time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 5.0 },
+              { "color": "red", "value": 10.0 }
+            ]
+          },
+          "decimals": 2
+        }
+      }
+    },
+    {
+      "id": 2,
+      "title": "Planning Latency (p50 / p95 / p99)",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 8, "x": 4, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, rate(astra_x_planning_duration_seconds_bucket[5m]))",
+          "legendFormat": "p50"
+        },
+        {
+          "expr": "histogram_quantile(0.95, rate(astra_x_planning_duration_seconds_bucket[5m]))",
+          "legendFormat": "p95"
+        },
+        {
+          "expr": "histogram_quantile(0.99, rate(astra_x_planning_duration_seconds_bucket[5m]))",
+          "legendFormat": "p99"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 2
+        }
+      }
+    },
+    {
+      "id": 3,
+      "title": "Reflection Outcomes",
+      "type": "piechart",
+      "gridPos": { "h": 6, "w": 4, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "rate(astra_x_reflection_outcomes_total[5m])",
+          "legendFormat": "{{decision}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none"
+        }
+      },
+      "options": {
+        "pieType": "pie",
+        "reduceOptions": {
+          "calcs": ["sum"],
+          "fields": "",
+          "values": false
+        },
+        "displayLabels": ["name", "percent"]
+      }
+    },
+    {
+      "id": 4,
+      "title": "Reflection Success Rate",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 4, "x": 16, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(astra_x_reflection_outcomes_total{decision=~\"accept|retry\"}[5m])) / sum(rate(astra_x_reflection_outcomes_total[5m])) * 100",
+          "legendFormat": "non-abort rate"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "orange", "value": 50 },
+              { "color": "green", "value": 80 }
+            ]
+          },
+          "decimals": 1
+        }
+      }
+    },
+    {
+      "id": 5,
+      "title": "Tool Execution Latency (p50 / p95)",
+      "type": "timeseries",
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, rate(astra_x_tool_execution_duration_seconds_bucket[5m]))",
+          "legendFormat": "p50"
+        },
+        {
+          "expr": "histogram_quantile(0.95, rate(astra_x_tool_execution_duration_seconds_bucket[5m]))",
+          "legendFormat": "p95"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 2
+        }
+      }
+    },
+    {
+      "id": 6,
+      "title": "Tool Latency by Tool Name",
+      "type": "bargauge",
+      "gridPos": { "h": 7, "w": 4, "x": 8, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "rate(astra_x_tool_execution_duration_seconds_sum[5m]) / rate(astra_x_tool_execution_duration_seconds_count[5m])",
+          "legendFormat": "{{tool_name}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 2
+        }
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "showUnfilled": true
+      }
+    },
+    {
+      "id": 7,
+      "title": "Memory Retrieval Latency",
+      "type": "timeseries",
+      "gridPos": { "h": 7, "w": 6, "x": 12, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "rate(astra_x_memory_retrieval_duration_seconds_sum[5m]) / rate(astra_x_memory_retrieval_duration_seconds_count[5m])",
+          "legendFormat": "avg retrieval"
+        },
+        {
+          "expr": "rate(astra_x_memory_store_duration_seconds_sum[5m]) / rate(astra_x_memory_store_duration_seconds_count[5m])",
+          "legendFormat": "avg store"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 3
+        }
+      }
+    },
+    {
+      "id": 8,
+      "title": "Provider Latency (p50 / p95 by Provider)",
+      "type": "timeseries",
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 13 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, rate(astra_x_provider_request_duration_seconds_bucket{provider=\"ollama\"}[5m]))",
+          "legendFormat": "ollama p50"
+        },
+        {
+          "expr": "histogram_quantile(0.95, rate(astra_x_provider_request_duration_seconds_bucket{provider=\"ollama\"}[5m]))",
+          "legendFormat": "ollama p95"
+        },
+        {
+          "expr": "histogram_quantile(0.50, rate(astra_x_provider_request_duration_seconds_bucket{provider=\"lm_studio\"}[5m]))",
+          "legendFormat": "lm_studio p50"
+        },
+        {
+          "expr": "histogram_quantile(0.95, rate(astra_x_provider_request_duration_seconds_bucket{provider=\"lm_studio\"}[5m]))",
+          "legendFormat": "lm_studio p95"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 2
+        }
+      }
+    },
+    {
+      "id": 9,
+      "title": "Provider Request Rate",
+      "type": "timeseries",
+      "gridPos": { "h": 7, "w": 6, "x": 12, "y": 13 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum by (provider, result) (rate(astra_x_provider_requests_total[5m]))",
+          "legendFormat": "{{provider}} — {{result}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "decimals": 1
+        }
+      }
+    },
+    {
+      "id": 10,
+      "title": "Provider Error Rate",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 4, "x": 18, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(astra_x_provider_requests_total{result=\"error\"}[5m])) / sum(rate(astra_x_provider_requests_total[5m])) * 100",
+          "legendFormat": "error %"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 5 },
+              { "color": "red", "value": 15 }
+            ]
+          },
+          "decimals": 1
+        }
+      }
+    },
+    {
+      "id": 11,
+      "title": "Plugin Load Time",
+      "type": "bargauge",
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 20 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "astra_x_plugin_load_duration_seconds_max",
+          "legendFormat": "{{plugin_name}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 2
+        }
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "showUnfilled": true
+      }
+    },
+    {
+      "id": 12,
+      "title": "Planning Count",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 2, "x": 18, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "rate(astra_x_planning_duration_seconds_count[5m])",
+          "legendFormat": "plans/min"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "decimals": 1
+        }
+      }
+    },
+    {
+      "id": 13,
+      "title": "Token Usage by Provider",
+      "type": "timeseries",
+      "gridPos": { "h": 7, "w": 12, "x": 6, "y": 20 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum by (provider) (rate(astra_x_llm_tokens_total{type=\"completion\"}[5m]))",
+          "legendFormat": "{{provider}} — completion"
+        },
+        {
+          "expr": "sum by (provider) (rate(astra_x_llm_tokens_total{type=\"prompt\"}[5m]))",
+          "legendFormat": "{{provider}} — prompt"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0
+        }
+      }
+    }
+  ],
+  "rows": [],
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": ["5s", "10s", "30s", "1m", "5m", "15m", "30m", "1h"]
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "provider",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "query": "label_values(astra_x_provider_request_duration_seconds_count, provider)",
+        "refresh": 1,
+        "includeAll": true,
+        "multi": true
+      }
+    ]
+  }
+}
