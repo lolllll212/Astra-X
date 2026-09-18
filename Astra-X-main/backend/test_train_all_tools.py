@@ -79,6 +79,7 @@ CONVERSATION_ID = str(uuid4())
 
 MODEL_CHAT = "qwen2.5-coder-7b-instruct"
 MODEL_HEAVY = "deepseek-r1-distill-qwen-7b"
+MODEL_HEAVY_14B = "deepseek-r1-distill-qwen-14b"
 MODEL_VISION = "qwen/qwen3.5-9b"
 
 # ---------------------------------------------------------------------------
@@ -487,6 +488,16 @@ async def run() -> None:
         trainer.track("L:lmstudio_qwen35", "chat with the 9B high-capacity model", ok, (res.output or res.error or "")[:120])
         trainer.train("L:lmstudio_qwen35", "chat with the high-capacity 9B reasoning model", res)
         print(f"  [L] lmstudio chat (qwen3.5)   {'PASS' if ok else 'FAIL'}  -> {(res.output or res.error or '').strip()[:100]}")
+
+        res = await executor.execute(ToolCall(tool_name="lmstudio", arguments={
+            "action": "chat", "model": MODEL_HEAVY_14B,
+            "prompt": "Reply with exactly: DS14B-OK. Do not explain.",
+            "max_tokens": 2048, "temperature": 0,
+        }), ctx)
+        ok = _result_ok(res)
+        trainer.track("L:lmstudio_heavy14b", "chat with the 14B reasoning model", ok, (res.output or res.error or "")[:120])
+        trainer.train("L:lmstudio_heavy14b", "chat with the 14B reasoning model", res)
+        print(f"  [L] lmstudio chat (ds14b)     {'PASS' if ok else 'FAIL'}  -> {(res.output or res.error or '').strip()[:100]}")
 
         res = await executor.execute(ToolCall(tool_name="lmstudio", arguments={"action": "get_status"}), ctx)
         ok = _result_ok(res)
