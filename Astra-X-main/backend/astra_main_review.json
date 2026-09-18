@@ -1,0 +1,1425 @@
+{
+  "target_dir": "C:\\Users\\Ashut\\Astra-main",
+  "reviews": [
+    {
+      "path": "app.py",
+      "issues": [],
+      "upgrades": [
+        "Consider using environment variables for sensitive settings like `API_AUTH_TOKEN` instead of hardcoding them in the code."
+      ],
+      "database_related": true,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "astra_main.py",
+      "issues": [],
+      "upgrades": [
+        "Consider using environment variables for sensitive settings like `API_AUTH_TOKEN` instead of hardcoding them in the code."
+      ],
+      "database_related": true,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "docker-compose.yml",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "pyproject.toml",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "railway.json",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "render.yaml",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "start.sh",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "_test_harness.py",
+      "issues": [
+        "Potential security risk: using `exec` to run user input"
+      ],
+      "upgrades": [
+        "Refactor to avoid using `exec` and instead use a safer method to execute commands or scripts."
+      ],
+      "database_related": true,
+      "action": "keep",
+      "priority": "critical"
+    },
+    {
+      "path": "config\\logging_config.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "config\\settings.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "config\\__init__.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\application.py",
+      "issues": [
+        "Potential issue with `self.voice_mode` being used before initialization."
+      ],
+      "upgrades": [
+        "Ensure `self.voice_mode` is initialized properly in the constructor or before use."
+      ],
+      "database_related": true,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\crypto.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\__init__.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\agents\\base.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\agents\\collaboration.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\agents\\executor.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\agents\\lifecycle.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\agents\\messaging.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\agents\\monitoring.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\agents\\persistence.py",
+      "issues": [],
+      "upgrades": [
+        "Consider adding type hints for method parameters and return types for better code clarity."
+      ],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\agents\\planner.py",
+      "issues": [],
+      "upgrades": [
+        "Consider adding type hints for method parameters and return types for better code clarity."
+      ],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\agents\\reflector.py",
+      "issues": [],
+      "upgrades": [
+        "Consider adding type hints for method parameters and return types for better code clarity."
+      ],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\agents\\registry.py",
+      "issues": [],
+      "upgrades": [
+        "Consider adding type hints for method parameters and return types for better code clarity."
+      ],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\agents\\security.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\agents\\supervisor.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\agents\\templates.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\agents\\__init__.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\computer_use\\browser_advanced.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\computer_use\\gui_automation.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\computer_use\\screen_capture.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\computer_use\\__init__.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\events\\bus.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\governance\\audit.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": true,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\governance\\hitl.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\governance\\policy.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": true,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\governance\\rbac.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\governance\\rings.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\governance\\rules.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\governance\\verify.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\governance\\__init__.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\integrations\\__init__.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\integrations\\erp\\base.py",
+      "issues": [
+        "Incomplete method implementation in `_ensure_token_valid`"
+      ],
+      "upgrades": [
+        "Complete the `_ensure_token_valid` method to ensure token validity"
+      ],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\integrations\\erp\\oracle.py",
+      "issues": [
+        "Incomplete method implementation in `query`"
+      ],
+      "upgrades": [
+        "Complete the `query` method to handle query execution"
+      ],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\integrations\\erp\\salesforce.py",
+      "issues": [],
+      "upgrades": [
+        "Consider using environment variables for sensitive configuration values."
+      ],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\integrations\\erp\\sap.py",
+      "issues": [
+        "ImportError: No module named 'httpx'"
+      ],
+      "upgrades": [
+        "Install the 'httpx' package to resolve the import error."
+      ],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\integrations\\erp\\__init__.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\integrations\\graphql\\client.py",
+      "issues": [
+        "ImportError: No module named 'httpx'"
+      ],
+      "upgrades": [
+        "Install the 'httpx' package to resolve the import error."
+      ],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\integrations\\graphql\\schema.py",
+      "issues": [],
+      "upgrades": [
+        "Consider adding type hints for better code readability and maintenance."
+      ],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\integrations\\graphql\\server.py",
+      "issues": [],
+      "upgrades": [
+        "Consider adding error handling for cases where the GraphQL schema is not available."
+      ],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\integrations\\graphql\\__init__.py",
+      "issues": [],
+      "upgrades": [
+        "Consider adding docstrings to the public functions and classes for better documentation."
+      ],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\integrations\\grpc\\client.py",
+      "issues": [],
+      "upgrades": [
+        "Consider adding a method to check the connection status of the gRPC client."
+      ],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\integrations\\grpc\\server.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\integrations\\grpc\\__init__.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\integrations\\mcp_enhanced\\server.py",
+      "issues": [
+        "Incomplete code at the end of the file"
+      ],
+      "upgrades": [
+        "Complete the class definition for `EnhancedMCPServer`"
+      ],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\integrations\\mcp_enhanced\\__init__.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\integrations\\protocol\\unified.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\integrations\\protocol\\__init__.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\integrations\\rest\\client.py",
+      "issues": [
+        "Unresolved import for `RESTResponse` in the docstring"
+      ],
+      "upgrades": [
+        "Import `RESTResponse` from the correct module"
+      ],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\integrations\\rest\\middleware.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\integrations\\rest\\server.py",
+      "issues": [],
+      "upgrades": [
+        "Consider using a more robust task store like Redis or Celery for production use."
+      ],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\integrations\\rest\\__init__.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\integrations\\swarms\\agents.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\integrations\\swarms\\client.py",
+      "issues": [
+        "Potential issue with lazy import of `swarms_client` which may not be installed."
+      ],
+      "upgrades": [
+        "Consider using a more robust task store like Redis or Celery for production use."
+      ],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\integrations\\swarms\\__init__.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\marketplace\\installer.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": true,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\marketplace\\registry.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": true,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\marketplace\\templates.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\marketplace\\__init__.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\mcp\\server.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\mcp\\__init__.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\media\\image_gen.py",
+      "issues": [
+        "Incomplete class definition at the end of the file"
+      ],
+      "upgrades": [
+        "Complete the `GeneratedImage` class by adding a missing method or property"
+      ],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\media\\voice_io.py",
+      "issues": [],
+      "upgrades": [
+        "Consider adding type hints for parameters and return types in methods for better readability and maintainability."
+      ],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\media\\__init__.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\memory\\expiration.py",
+      "issues": [],
+      "upgrades": [
+        "Consider adding type hints for parameters and return types in methods for better readability and maintainability."
+      ],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\memory\\knowledge_graph.py",
+      "issues": [],
+      "upgrades": [
+        "Consider adding type hints for parameters and return types in methods for better readability and maintainability."
+      ],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\memory\\retrieval.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\memory\\semantic.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\memory\\summarization.py",
+      "issues": [
+        "The `messages` parameter in `_call_llm` is not defined."
+      ],
+      "upgrades": [
+        "Define the `messages` parameter in `_call_llm`."
+      ],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\memory\\summarizer.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core/memory/vector_store.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core/memory/__init__.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core/models/cache.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core/models/classifier.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\models\\prompt_optimizer.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\models\\router.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\models\\__init__.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\observability\\cost_tracker.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\observability\\evals.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\observability\\exporters.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\observability\\metrics.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\observability\\middleware.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\observability\\tracing.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\observability\\__init__.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\orchestration\\durable_executor.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\orchestration\\error_recovery.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\orchestration\\persistence.py",
+      "issues": [],
+      "upgrades": [
+        "Consider adding type hints for all function parameters and return types for better code clarity and maintainability."
+      ],
+      "database_related": true,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\orchestration\\state_machine.py",
+      "issues": [],
+      "upgrades": [
+        "Consider adding type hints for all function parameters and return types for better code clarity and maintainability."
+      ],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\orchestration\\workflow.py",
+      "issues": [],
+      "upgrades": [
+        "Consider adding type hints for all function parameters and return types for better code clarity and maintainability."
+      ],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\orchestration\\__init__.py",
+      "issues": [],
+      "upgrades": [
+        "Consider adding type hints for all function parameters and return types for better code clarity and maintainability."
+      ],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\plugins\\base.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\plugins\\manager.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\reasoning\\engine.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\reasoning\\__init__.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\sdk\\engine.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\sdk\\__init__.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\services\\agent_orchestrator.py",
+      "issues": [
+        "Potential missing imports for `TaskType` and `ClassificationResult`"
+      ],
+      "upgrades": [
+        "Import `TaskType` and `ClassificationResult` from `core.models.classifier`"
+      ],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\services\\chat_service.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\services\\memory_service.py",
+      "issues": [],
+      "upgrades": [
+        "Consider adding type hints for parameters and return types in methods for better code clarity."
+      ],
+      "database_related": true,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\services\\tool_service.py",
+      "issues": [],
+      "upgrades": [
+        "Consider adding type hints for parameters and return types in methods for better code clarity."
+      ],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\services\\__init__.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\tools\\base.py",
+      "issues": [],
+      "upgrades": [
+        "Consider adding type hints for parameters and return types in methods for better code clarity."
+      ],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\tools\\browser.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\tools\\code_exec.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\tools\\file_ops.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\tools\\github.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\tools\\implementations.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\tools\\registry.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\tools\\reminder_scheduler.py",
+      "issues": [
+        "Global state for reminders can lead to race conditions and is not thread-safe."
+      ],
+      "upgrades": [
+        "Use an in-memory database or a lock-free data structure to manage reminders."
+      ],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\tools\\shell.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\tools\\__init__.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\ui\\app.py",
+      "issues": [
+        "Potential missing imports for `gr` module"
+      ],
+      "upgrades": [
+        "Install Gradio using pip if not already installed: `pip install gradio`"
+      ],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\ui\\streaming.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\ui\\__init__.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\workspace\\multi_user.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\workspace\\session.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\workspace\\snapshot.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "core\\workspace\\__init__.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "infrastructure\\database\\repository.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": true,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "infrastructure\\llm\\router.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "infrastructure\\vector_store\\chroma_store.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": true,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "infrastructure\\vector_store\\in_memory.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "infrastructure\\vector_store\\__init__.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "infrastructure\\voice\\engine.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "tests\\check_db.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": true,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "tests\\test_agents.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "tests\\test_code_exec.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "tests\\test_computer_use.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "tests\\test_db_fixes.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": true,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "tests\\test_governance.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "tests\\test_integration.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "tests\\test_integrations_standardized.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "tests\\test_observability.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "tests\\test_opencode_zen.py",
+      "issues": [
+        "Potential security issue: The test fixture creates a temporary database file which could be used for malicious purposes if not properly secured."
+      ],
+      "upgrades": [
+        "Consider using an in-memory database or a more secure method to create temporary files for testing."
+      ],
+      "database_related": true,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "tests\\test_orchestration.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "tests\\test_phase8.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    },
+    {
+      "path": "tests\\test_shell.py",
+      "issues": [],
+      "upgrades": [],
+      "database_related": false,
+      "action": "keep",
+      "priority": "normal"
+    }
+  ],
+  "summary": {
+    "files_analyzed": 147,
+    "with_issues": 15,
+    "db_related": 15,
+    "non_db": [
+      "docker-compose.yml",
+      "pyproject.toml",
+      "railway.json",
+      "render.yaml",
+      "start.sh",
+      "config\\logging_config.py",
+      "config\\settings.py",
+      "config\\__init__.py",
+      "core\\crypto.py",
+      "core\\__init__.py",
+      "core\\agents\\base.py",
+      "core\\agents\\collaboration.py",
+      "core\\agents\\executor.py",
+      "core\\agents\\lifecycle.py",
+      "core\\agents\\messaging.py",
+      "core\\agents\\monitoring.py",
+      "core\\agents\\persistence.py",
+      "core\\agents\\planner.py",
+      "core\\agents\\reflector.py",
+      "core\\agents\\registry.py",
+      "core\\agents\\security.py",
+      "core\\agents\\supervisor.py",
+      "core\\agents\\templates.py",
+      "core\\agents\\__init__.py",
+      "core\\computer_use\\browser_advanced.py",
+      "core\\computer_use\\gui_automation.py",
+      "core\\computer_use\\screen_capture.py",
+      "core\\computer_use\\__init__.py",
+      "core\\events\\bus.py",
+      "core\\governance\\hitl.py",
+      "core\\governance\\rbac.py",
+      "core\\governance\\rings.py",
+      "core\\governance\\rules.py",
+      "core\\governance\\verify.py",
+      "core\\governance\\__init__.py",
+      "core\\integrations\\__init__.py",
+      "core\\integrations\\erp\\base.py",
+      "core\\integrations\\erp\\oracle.py",
+      "core\\integrations\\erp\\salesforce.py",
+      "core\\integrations\\erp\\sap.py",
+      "core\\integrations\\erp\\__init__.py",
+      "core\\integrations\\graphql\\client.py",
+      "core\\integrations\\graphql\\schema.py",
+      "core\\integrations\\graphql\\server.py",
+      "core\\integrations\\graphql\\__init__.py",
+      "core\\integrations\\grpc\\client.py",
+      "core\\integrations\\grpc\\server.py",
+      "core\\integrations\\grpc\\__init__.py",
+      "core\\integrations\\mcp_enhanced\\server.py",
+      "core\\integrations\\mcp_enhanced\\__init__.py",
+      "core\\integrations\\protocol\\unified.py",
+      "core\\integrations\\protocol\\__init__.py",
+      "core\\integrations\\rest\\client.py",
+      "core\\integrations\\rest\\middleware.py",
+      "core\\integrations\\rest\\server.py",
+      "core\\integrations\\rest\\__init__.py",
+      "core\\integrations\\swarms\\agents.py",
+      "core\\integrations\\swarms\\client.py",
+      "core\\integrations\\swarms\\__init__.py",
+      "core\\marketplace\\templates.py",
+      "core\\marketplace\\__init__.py",
+      "core\\mcp\\server.py",
+      "core\\mcp\\__init__.py",
+      "core\\media\\image_gen.py",
+      "core\\media\\voice_io.py",
+      "core\\media\\__init__.py",
+      "core\\memory\\expiration.py",
+      "core\\memory\\knowledge_graph.py",
+      "core\\memory\\retrieval.py",
+      "core\\memory\\semantic.py",
+      "core\\memory\\summarization.py",
+      "core\\memory\\summarizer.py",
+      "core/memory/vector_store.py",
+      "core/memory/__init__.py",
+      "core/models/cache.py",
+      "core/models/classifier.py",
+      "core\\models\\prompt_optimizer.py",
+      "core\\models\\router.py",
+      "core\\models\\__init__.py",
+      "core\\observability\\cost_tracker.py",
+      "core\\observability\\evals.py",
+      "core\\observability\\exporters.py",
+      "core\\observability\\metrics.py",
+      "core\\observability\\middleware.py",
+      "core\\observability\\tracing.py",
+      "core\\observability\\__init__.py",
+      "core\\orchestration\\durable_executor.py",
+      "core\\orchestration\\error_recovery.py",
+      "core\\orchestration\\state_machine.py",
+      "core\\orchestration\\workflow.py",
+      "core\\orchestration\\__init__.py",
+      "core\\plugins\\base.py",
+      "core\\plugins\\manager.py",
+      "core\\reasoning\\engine.py",
+      "core\\reasoning\\__init__.py",
+      "core\\sdk\\engine.py",
+      "core\\sdk\\__init__.py",
+      "core\\services\\agent_orchestrator.py",
+      "core\\services\\chat_service.py",
+      "core\\services\\tool_service.py",
+      "core\\services\\__init__.py",
+      "core\\tools\\base.py",
+      "core\\tools\\browser.py",
+      "core\\tools\\code_exec.py",
+      "core\\tools\\file_ops.py",
+      "core\\tools\\github.py",
+      "core\\tools\\implementations.py",
+      "core\\tools\\registry.py",
+      "core\\tools\\reminder_scheduler.py",
+      "core\\tools\\shell.py",
+      "core\\tools\\__init__.py",
+      "core\\ui\\app.py",
+      "core\\ui\\streaming.py",
+      "core\\ui\\__init__.py",
+      "core\\workspace\\multi_user.py",
+      "core\\workspace\\session.py",
+      "core\\workspace\\snapshot.py",
+      "core\\workspace\\__init__.py",
+      "infrastructure\\llm\\router.py",
+      "infrastructure\\vector_store\\in_memory.py",
+      "infrastructure\\vector_store\\__init__.py",
+      "infrastructure\\voice\\engine.py",
+      "tests\\test_agents.py",
+      "tests\\test_code_exec.py",
+      "tests\\test_computer_use.py",
+      "tests\\test_governance.py",
+      "tests\\test_integration.py",
+      "tests\\test_integrations_standardized.py",
+      "tests\\test_observability.py",
+      "tests\\test_orchestration.py",
+      "tests\\test_phase8.py",
+      "tests\\test_shell.py"
+    ],
+    "unwanted_suggestions": []
+  }
+}

@@ -1,0 +1,1806 @@
+{
+  "calculator": {
+    "name": "calculator",
+    "description": "Evaluate a mathematical expression safely. Supports +, -, *, /, //, %, **, and functions like sqrt, sin, cos, log, pi, e.",
+    "capabilities": [
+      "calculate"
+    ],
+    "params": [
+      {
+        "name": "expression",
+        "type": "string",
+        "required": true,
+        "enum": null,
+        "default": null
+      }
+    ]
+  },
+  "datetime": {
+    "name": "datetime",
+    "description": "Get the current date, time, and timezone information.",
+    "capabilities": [
+      "get_datetime"
+    ],
+    "params": [
+      {
+        "name": "format",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": "iso"
+      },
+      {
+        "name": "timezone",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": "UTC"
+      }
+    ]
+  },
+  "json": {
+    "name": "json",
+    "description": "Parse, validate, stringify, or query JSON data. Operations: parse (string \u2192 object), stringify (object \u2192 pretty string), validate, query (dot-path extraction).",
+    "capabilities": [
+      "manipulate_json"
+    ],
+    "params": [
+      {
+        "name": "operation",
+        "type": "string",
+        "required": true,
+        "enum": [
+          "parse",
+          "stringify",
+          "validate",
+          "query"
+        ],
+        "default": null
+      },
+      {
+        "name": "input",
+        "type": "string",
+        "required": true,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "path",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "indent",
+        "type": "integer",
+        "required": false,
+        "enum": null,
+        "default": 2
+      }
+    ]
+  },
+  "text": {
+    "name": "text",
+    "description": "Manipulate text. Supports operations: count (words/chars), split, join, upper, lower, trim, reverse, contains, replace, substring.",
+    "capabilities": [
+      "manipulate_text"
+    ],
+    "params": [
+      {
+        "name": "operation",
+        "type": "string",
+        "required": true,
+        "enum": [
+          "count_words",
+          "count_chars",
+          "split",
+          "join",
+          "upper",
+          "lower",
+          "trim",
+          "reverse",
+          "contains",
+          "replace",
+          "substring"
+        ],
+        "default": null
+      },
+      {
+        "name": "text",
+        "type": "string",
+        "required": true,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "separator",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "old",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "new",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "start",
+        "type": "integer",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "end",
+        "type": "integer",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "substring",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      }
+    ]
+  },
+  "uuid": {
+    "name": "uuid",
+    "description": "Generate one or more UUIDs (version 4).",
+    "capabilities": [
+      "generate_uuid"
+    ],
+    "params": [
+      {
+        "name": "count",
+        "type": "integer",
+        "required": false,
+        "enum": null,
+        "default": 1
+      },
+      {
+        "name": "version",
+        "type": "integer",
+        "required": false,
+        "enum": null,
+        "default": 4
+      }
+    ]
+  },
+  "list_directory": {
+    "name": "list_directory",
+    "description": "List files and directories at the given path. Optionally filter by glob pattern.",
+    "capabilities": [
+      "list_directory"
+    ],
+    "params": [
+      {
+        "name": "path",
+        "type": "string",
+        "required": true,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "pattern",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "recursive",
+        "type": "boolean",
+        "required": false,
+        "enum": null,
+        "default": false
+      },
+      {
+        "name": "max_depth",
+        "type": "integer",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "include_hidden",
+        "type": "boolean",
+        "required": false,
+        "enum": null,
+        "default": false
+      }
+    ]
+  },
+  "read_file": {
+    "name": "read_file",
+    "description": "Read the contents of a file at the given path.",
+    "capabilities": [
+      "read_file",
+      "access_file_content"
+    ],
+    "params": [
+      {
+        "name": "path",
+        "type": "string",
+        "required": true,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "offset",
+        "type": "integer",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "limit",
+        "type": "integer",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "encoding",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": "utf-8"
+      }
+    ]
+  },
+  "search_files": {
+    "name": "search_files",
+    "description": "Search for files by glob pattern or grep text content within files.",
+    "capabilities": [
+      "search_files"
+    ],
+    "params": [
+      {
+        "name": "root",
+        "type": "string",
+        "required": true,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "pattern",
+        "type": "string",
+        "required": true,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "mode",
+        "type": "string",
+        "required": false,
+        "enum": [
+          "glob",
+          "grep"
+        ],
+        "default": "glob"
+      },
+      {
+        "name": "max_results",
+        "type": "integer",
+        "required": false,
+        "enum": null,
+        "default": 50
+      },
+      {
+        "name": "include_hidden",
+        "type": "boolean",
+        "required": false,
+        "enum": null,
+        "default": false
+      }
+    ]
+  },
+  "write_file": {
+    "name": "write_file",
+    "description": "Write content to a file. Creates parent directories if they do not exist.",
+    "capabilities": [
+      "write_file",
+      "modify_file_content"
+    ],
+    "params": [
+      {
+        "name": "path",
+        "type": "string",
+        "required": true,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "content",
+        "type": "string",
+        "required": true,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "encoding",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": "utf-8"
+      },
+      {
+        "name": "append",
+        "type": "boolean",
+        "required": false,
+        "enum": null,
+        "default": false
+      }
+    ]
+  },
+  "github_commits": {
+    "name": "github_commits",
+    "description": "List recent commits from a GitHub repository.",
+    "capabilities": [
+      "get_commits"
+    ],
+    "params": [
+      {
+        "name": "owner",
+        "type": "string",
+        "required": true,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "repo",
+        "type": "string",
+        "required": true,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "branch",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "count",
+        "type": "integer",
+        "required": false,
+        "enum": null,
+        "default": 10
+      }
+    ]
+  },
+  "github_issues": {
+    "name": "github_issues",
+    "description": "List open issues from a GitHub repository.",
+    "capabilities": [
+      "get_issues"
+    ],
+    "params": [
+      {
+        "name": "owner",
+        "type": "string",
+        "required": true,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "repo",
+        "type": "string",
+        "required": true,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "state",
+        "type": "string",
+        "required": false,
+        "enum": [
+          "open",
+          "closed",
+          "all"
+        ],
+        "default": "open"
+      },
+      {
+        "name": "label",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "count",
+        "type": "integer",
+        "required": false,
+        "enum": null,
+        "default": 10
+      }
+    ]
+  },
+  "github_pull_requests": {
+    "name": "github_pull_requests",
+    "description": "List pull requests from a GitHub repository.",
+    "capabilities": [
+      "get_pull_requests"
+    ],
+    "params": [
+      {
+        "name": "owner",
+        "type": "string",
+        "required": true,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "repo",
+        "type": "string",
+        "required": true,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "state",
+        "type": "string",
+        "required": false,
+        "enum": [
+          "open",
+          "closed",
+          "all"
+        ],
+        "default": "open"
+      },
+      {
+        "name": "count",
+        "type": "integer",
+        "required": false,
+        "enum": null,
+        "default": 10
+      }
+    ]
+  },
+  "github_repository": {
+    "name": "github_repository",
+    "description": "Get information about a GitHub repository: description, stars, forks, language, topics, license.",
+    "capabilities": [
+      "get_repository_info",
+      "search_repository"
+    ],
+    "params": [
+      {
+        "name": "owner",
+        "type": "string",
+        "required": true,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "repo",
+        "type": "string",
+        "required": true,
+        "enum": null,
+        "default": null
+      }
+    ]
+  },
+  "web_download": {
+    "name": "web_download",
+    "description": "Download a file from a URL and save it to the workspace.",
+    "capabilities": [
+      "download_file"
+    ],
+    "params": [
+      {
+        "name": "url",
+        "type": "string",
+        "required": true,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "output_path",
+        "type": "string",
+        "required": true,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "timeout",
+        "type": "integer",
+        "required": false,
+        "enum": null,
+        "default": 60
+      }
+    ]
+  },
+  "web_fetch": {
+    "name": "web_fetch",
+    "description": "Fetch the content of a URL and return it as text (HTML stripped to markdown-like plain text).",
+    "capabilities": [
+      "fetch_url"
+    ],
+    "params": [
+      {
+        "name": "url",
+        "type": "string",
+        "required": true,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "format",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": "text"
+      },
+      {
+        "name": "timeout",
+        "type": "integer",
+        "required": false,
+        "enum": null,
+        "default": 15
+      }
+    ]
+  },
+  "web_scrape": {
+    "name": "web_scrape",
+    "description": "Scrape and extract structured data from a web page: title, meta tags, headings, links, and text content.",
+    "capabilities": [
+      "scrape_web"
+    ],
+    "params": [
+      {
+        "name": "url",
+        "type": "string",
+        "required": true,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "extract",
+        "type": "string",
+        "required": false,
+        "enum": [
+          "all",
+          "text",
+          "links",
+          "images",
+          "headings"
+        ],
+        "default": "all"
+      },
+      {
+        "name": "timeout",
+        "type": "integer",
+        "required": false,
+        "enum": null,
+        "default": 15
+      }
+    ]
+  },
+  "web_search": {
+    "name": "web_search",
+    "description": "Search the web for a given query. Returns a list of results with titles, URLs, and snippets.",
+    "capabilities": [
+      "search_web"
+    ],
+    "params": [
+      {
+        "name": "query",
+        "type": "string",
+        "required": true,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "count",
+        "type": "integer",
+        "required": false,
+        "enum": null,
+        "default": 8
+      }
+    ]
+  },
+  "reconnaissance": {
+    "name": "reconnaissance",
+    "description": "Perform Phase 1 reconnaissance: map architecture, trust boundaries, input surfaces, prior evidence, and generate deterministic coverage ledger.",
+    "capabilities": [
+      "reconnaissance",
+      "architecture_mapping",
+      "coverage_ledger_generation"
+    ],
+    "params": [
+      {
+        "name": "target_description",
+        "type": "string",
+        "required": true,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "architecture_markdown",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": ""
+      },
+      {
+        "name": "source_code_paths",
+        "type": "array",
+        "required": false,
+        "enum": null,
+        "default": []
+      },
+      {
+        "name": "config_files",
+        "type": "array",
+        "required": false,
+        "enum": null,
+        "default": []
+      },
+      {
+        "name": "output_dir",
+        "type": "string",
+        "required": true,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "include_attack_classes",
+        "type": "array",
+        "required": false,
+        "enum": null,
+        "default": []
+      }
+    ]
+  },
+  "hunting": {
+    "name": "hunting",
+    "description": "Perform Phase 2 coverage-led hunting: assign isolated hunters from coverage ledger units, record their checks, and use coverage critics to find gaps.",
+    "capabilities": [
+      "hunting",
+      "coverage_led_hunting",
+      "gap_analysis"
+    ],
+    "params": [
+      {
+        "name": "coverage_ledger_path",
+        "type": "string",
+        "required": true,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "architecture_path",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": ""
+      },
+      {
+        "name": "output_dir",
+        "type": "string",
+        "required": true,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "hunter_count",
+        "type": "integer",
+        "required": false,
+        "enum": null,
+        "default": 5
+      },
+      {
+        "name": "attack_class_prompts",
+        "type": "object",
+        "required": false,
+        "enum": null,
+        "default": {}
+      },
+      {
+        "name": "run_coverage_critic",
+        "type": "boolean",
+        "required": false,
+        "enum": null,
+        "default": true
+      }
+    ]
+  },
+  "candidate_validation": {
+    "name": "candidate_validation",
+    "description": "Perform Phase 3 candidate validation: assign fresh verifiers to each unique candidate finding to attempt disproof.",
+    "capabilities": [
+      "candidate_validation",
+      "verification",
+      "disproof"
+    ],
+    "params": [
+      {
+        "name": "findings_path",
+        "type": "string",
+        "required": true,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "output_dir",
+        "type": "string",
+        "required": true,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "verification_prompts",
+        "type": "object",
+        "required": false,
+        "enum": null,
+        "default": {}
+      },
+      {
+        "name": "require_source_verification",
+        "type": "boolean",
+        "required": false,
+        "enum": null,
+        "default": true
+      }
+    ]
+  },
+  "structured_output": {
+    "name": "structured_output",
+    "description": "Perform Phase 4 structured output: organize findings by verdict, validate against report-schema.json, produce final findings.json.",
+    "capabilities": [
+      "structured_output",
+      "schema_validation",
+      "findings_organization"
+    ],
+    "params": [
+      {
+        "name": "findings_path",
+        "type": "string",
+        "required": true,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "schema_path",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": ""
+      },
+      {
+        "name": "output_dir",
+        "type": "string",
+        "required": true,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "include_rejected",
+        "type": "boolean",
+        "required": false,
+        "enum": null,
+        "default": false
+      }
+    ]
+  },
+  "independent_verification": {
+    "name": "independent_verification",
+    "description": "Perform Phase 5 independent verification: fresh agents verify final source claims. Material replacements get another independent verifier.",
+    "capabilities": [
+      "independent_verification",
+      "source_claim_verification",
+      "material_replacement_check"
+    ],
+    "params": [
+      {
+        "name": "findings_path",
+        "type": "string",
+        "required": true,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "source_code_paths",
+        "type": "array",
+        "required": true,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "output_dir",
+        "type": "string",
+        "required": true,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "material_replacement_threshold",
+        "type": "number",
+        "required": false,
+        "enum": null,
+        "default": 0.7
+      },
+      {
+        "name": "verification_depth",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": "standard"
+      }
+    ]
+  },
+  "target_neutral_reporting": {
+    "name": "target_neutral_reporting",
+    "description": "Perform Phase 6 target-neutral reporting: generate REPORT.md, FINDINGS-DETAIL.md, and NEEDS-VALIDATION.md from verified findings and coverage ledger.",
+    "capabilities": [
+      "reporting",
+      "target_neutral_reporting",
+      "markdown_generation"
+    ],
+    "params": [
+      {
+        "name": "findings_path",
+        "type": "string",
+        "required": true,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "coverage_ledger_path",
+        "type": "string",
+        "required": true,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "architecture_path",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": ""
+      },
+      {
+        "name": "output_dir",
+        "type": "string",
+        "required": true,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "target_name",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": "Target System"
+      },
+      {
+        "name": "include_executive_summary",
+        "type": "boolean",
+        "required": false,
+        "enum": null,
+        "default": true
+      },
+      {
+        "name": "include_methodology",
+        "type": "boolean",
+        "required": false,
+        "enum": null,
+        "default": true
+      }
+    ]
+  },
+  "browserskill": {
+    "name": "browserskill",
+    "description": "Automate browser tasks using BrowserSkill: bsk CLI, daemon, and browser extension. Reuse real login state, run in separate Agent Window, human-in-loop for captc",
+    "capabilities": [
+      "browser_automation",
+      "web_interaction",
+      "human_in_loop",
+      "session_management"
+    ],
+    "params": [
+      {
+        "name": "action",
+        "type": "string",
+        "required": true,
+        "enum": [
+          "start_session",
+          "execute_action",
+          "execute_sequence",
+          "get_session",
+          "close_session",
+          "request_human_help",
+          "resolve_human_help"
+        ],
+        "default": null
+      },
+      {
+        "name": "session_id",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "config",
+        "type": "object",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "command",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "selector",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "value",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "url",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "options",
+        "type": "object",
+        "required": false,
+        "enum": null,
+        "default": {}
+      },
+      {
+        "name": "tab_id",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "timeout_ms",
+        "type": "integer",
+        "required": false,
+        "enum": null,
+        "default": 30000
+      },
+      {
+        "name": "sequence",
+        "type": "array",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "human_in_loop_reason",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "human_in_loop_message",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "human_in_loop_context",
+        "type": "object",
+        "required": false,
+        "enum": null,
+        "default": {}
+      },
+      {
+        "name": "resolution",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      }
+    ]
+  },
+  "voicebox": {
+    "name": "voicebox",
+    "description": "Voicebox TTS/STT: 7 TTS engines (Qwen3-TTS, Qwen CustomVoice, LuxTTS, Chatterbox Multilingual, Chatterbox Turbo, Hume TADA, Kokoro), voice cloning, 23 languages",
+    "capabilities": [
+      "tts",
+      "stt",
+      "voice_cloning",
+      "dictation",
+      "mcp_server",
+      "agent_voice_output",
+      "stories_editor"
+    ],
+    "params": [
+      {
+        "name": "action",
+        "type": "string",
+        "required": true,
+        "enum": [
+          "speak",
+          "transcribe",
+          "clone_voice",
+          "list_voices",
+          "start_dictation",
+          "stop_dictation",
+          "get_status",
+          "start_mcp_server",
+          "stop_mcp_server",
+          "create_story",
+          "add_story_track"
+        ],
+        "default": null
+      },
+      {
+        "name": "text",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "voice_profile_id",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "voice_name",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "engine",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "reference_audio_path",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "reference_text",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "language",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": "en"
+      },
+      {
+        "name": "speed",
+        "type": "number",
+        "required": false,
+        "enum": null,
+        "default": 1.0
+      },
+      {
+        "name": "pitch",
+        "type": "number",
+        "required": false,
+        "enum": null,
+        "default": 1.0
+      },
+      {
+        "name": "effects",
+        "type": "object",
+        "required": false,
+        "enum": null,
+        "default": {}
+      },
+      {
+        "name": "audio_path",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "stt_engine",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": "faster_whisper"
+      },
+      {
+        "name": "dictation_mode",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": "push_to_talk"
+      },
+      {
+        "name": "hotkey",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": "ctrl+shift+space"
+      },
+      {
+        "name": "auto_paste",
+        "type": "boolean",
+        "required": false,
+        "enum": null,
+        "default": true
+      },
+      {
+        "name": "story_name",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "track_data",
+        "type": "object",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "output_path",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      }
+    ]
+  },
+  "ecc": {
+    "name": "ecc",
+    "description": "ECC (Engineering Control Center): coordinated engineering through plan -> test -> implement -> review -> verify -> remember -> improve. The 140 agents of the EC",
+    "capabilities": [
+      "workflow_orchestration",
+      "agents",
+      "skills",
+      "hooks",
+      "memory",
+      "rules",
+      "security"
+    ],
+    "params": [
+      {
+        "name": "action",
+        "type": "string",
+        "required": true,
+        "enum": [
+          "execute_workflow",
+          "create_agent",
+          "create_skill",
+          "install_skill",
+          "create_hook",
+          "create_rule",
+          "search_memory",
+          "save_memory",
+          "build_context",
+          "scan_security",
+          "get_status",
+          "ecc_cli",
+          "llm_generate"
+        ],
+        "default": null
+      },
+      {
+        "name": "name",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "role",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "category",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "description",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "content",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "workflow_name",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": "plan -> test -> implement -> review -> verify -> remember -> improve"
+      },
+      {
+        "name": "feature",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "steps",
+        "type": "object",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "project_dir",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "query",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "tags",
+        "type": "object",
+        "required": false,
+        "enum": null,
+        "default": []
+      },
+      {
+        "name": "memory_type",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "skill_source",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "hook_type",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "language",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "scan_type",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "ecc_command",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "prompt",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "model",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "provider",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "base_url",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "temperature",
+        "type": "number",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "max_tokens",
+        "type": "number",
+        "required": false,
+        "enum": null,
+        "default": null
+      }
+    ]
+  },
+  "autofix": {
+    "name": "autofix",
+    "description": "Autonomous repair agent: takes one prompt like 'fix the wrong code in this database', finds and fixes bugs across the target project using the local LLM + files",
+    "capabilities": [
+      "autonomous_repair",
+      "code_fixing",
+      "project_scanning",
+      "automation"
+    ],
+    "params": [
+      {
+        "name": "action",
+        "type": "string",
+        "required": true,
+        "enum": [
+          "fix",
+          "review",
+          "confirm_writes",
+          "get_status"
+        ],
+        "default": null
+      },
+      {
+        "name": "prompt",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "path",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "model",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "use_heavy_model",
+        "type": "boolean",
+        "required": false,
+        "enum": null,
+        "default": false
+      },
+      {
+        "name": "approval_token",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "max_files",
+        "type": "integer",
+        "required": false,
+        "enum": null,
+        "default": 16
+      }
+    ]
+  },
+  "colibri": {
+    "name": "colibri",
+    "description": "Colibri inference engine: chat/serve/run GLM-5.2 (744B), GLM-5.3, Inkling (975B), Kimi K3 (2.8T), DeepSeek V4/V4.1 Flash, Qwen3.8/3.6, OLMoE. AI memory multitie",
+    "capabilities": [
+      "frontier_inference",
+      "moe_model_running",
+      "multitier_memory",
+      "local_serving"
+    ],
+    "params": [
+      {
+        "name": "action",
+        "type": "string",
+        "required": true,
+        "enum": [
+          "run",
+          "chat",
+          "serve",
+          "stop_serve",
+          "web",
+          "info",
+          "plan",
+          "doctor",
+          "mirror",
+          "bench",
+          "build",
+          "get_status"
+        ],
+        "default": null
+      },
+      {
+        "name": "prompt",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "model_dir",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "mirror_dir",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "ram",
+        "type": "number",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "repin",
+        "type": "integer",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "topp",
+        "type": "number",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "topk",
+        "type": "integer",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "ngen",
+        "type": "integer",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "cap",
+        "type": "integer",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "backend",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": "auto"
+      },
+      {
+        "name": "host",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": "127.0.0.1"
+      },
+      {
+        "name": "port",
+        "type": "integer",
+        "required": false,
+        "enum": null,
+        "default": 8000
+      },
+      {
+        "name": "bench_tasks",
+        "type": "array",
+        "required": false,
+        "enum": null,
+        "default": []
+      },
+      {
+        "name": "extra_args",
+        "type": "array",
+        "required": false,
+        "enum": null,
+        "default": []
+      }
+    ]
+  },
+  "ghidra": {
+    "name": "ghidra",
+    "description": "Ghidra SRE framework: analyze binaries headless (analyzeHeadless), list functions, decompile to C, extract strings/imports/exports, run Ghidra scripts (Java/Pyt",
+    "capabilities": [
+      "reverse_engineering",
+      "decompilation",
+      "binary_analysis",
+      "malware_analysis",
+      "scripting"
+    ],
+    "params": [
+      {
+        "name": "action",
+        "type": "string",
+        "required": true,
+        "enum": [
+          "analyze",
+          "list_functions",
+          "decompile",
+          "run_script",
+          "get_status"
+        ],
+        "default": null
+      },
+      {
+        "name": "ghidra_home",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "binary",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "project_dir",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "project_name",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "function_name",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "script_path",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "script_args",
+        "type": "array",
+        "required": false,
+        "enum": null,
+        "default": []
+      },
+      {
+        "name": "script_language",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": "java"
+      },
+      {
+        "name": "analysis_mode",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": "headless"
+      },
+      {
+        "name": "analysis_timeout_sec",
+        "type": "integer",
+        "required": false,
+        "enum": null,
+        "default": 600
+      },
+      {
+        "name": "max_memory_mb",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "extract_strings",
+        "type": "boolean",
+        "required": false,
+        "enum": null,
+        "default": false
+      },
+      {
+        "name": "language",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      }
+    ]
+  },
+  "lmstudio": {
+    "name": "lmstudio",
+    "description": "LM Studio local inference (OpenAI-compatible): chat, completion, embeddings, list models, status. Default base http://127.0.0.1:1234. Great for local DeepSeek R",
+    "capabilities": [
+      "local_inference",
+      "openai_compatible",
+      "gguf_models",
+      "nlp"
+    ],
+    "params": [
+      {
+        "name": "action",
+        "type": "string",
+        "required": true,
+        "enum": [
+          "chat",
+          "completion",
+          "embeddings",
+          "list_models",
+          "get_status"
+        ],
+        "default": null
+      },
+      {
+        "name": "model",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": "deepseek-r1-distill-qwen-7b"
+      },
+      {
+        "name": "prompt",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "system",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "messages",
+        "type": "array",
+        "required": false,
+        "enum": null,
+        "default": []
+      },
+      {
+        "name": "temperature",
+        "type": "number",
+        "required": false,
+        "enum": null,
+        "default": 0.7
+      },
+      {
+        "name": "max_tokens",
+        "type": "integer",
+        "required": false,
+        "enum": null,
+        "default": 1024
+      },
+      {
+        "name": "top_p",
+        "type": "number",
+        "required": false,
+        "enum": null,
+        "default": 1.0
+      },
+      {
+        "name": "base_url",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": "http://127.0.0.1:1234"
+      },
+      {
+        "name": "stream",
+        "type": "boolean",
+        "required": false,
+        "enum": null,
+        "default": false
+      },
+      {
+        "name": "text",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      },
+      {
+        "name": "greeting",
+        "type": "string",
+        "required": false,
+        "enum": null,
+        "default": null
+      }
+    ]
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Security Audit Findings Schema",
+  "type": "object",
+  "required": ["version", "generated_at", "findings"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+$"
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "description", "verdict", "severity", "attack_class", "coverage_unit_id", "hunter_id", "evidence", "steps_to_reproduce", "impact", "remediation", "references", "confidence"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^f-[a-f0-9]{8}$" },
+          "title": { "type": "string", "minLength": 1 },
+          "description": { "type": "string" },
+          "verdict": { "type": "string", "enum": ["confirmed", "needs_validation", "rejected"] },
+          "severity": { "type": "string", "enum": ["critical", "high", "medium", "low", "info"] },
+          "attack_class": { "type": "string", "minLength": 1 },
+          "coverage_unit_id": { "type": "string", "pattern": "^cu-[a-f0-9]{8}$" },
+          "hunter_id": { "type": "string", "pattern": "^h-[a-f0-9]{8}$" },
+          "evidence": { "type": "array", "items": { "type": "string" } },
+          "steps_to_reproduce": { "type": "array", "items": { "type": "string" } },
+          "impact": { "type": "string" },
+          "remediation": { "type": "string" },
+          "references": { "type": "array", "items": { "type": "string" } },
+          "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+          "verifier_id": { "type": ["string", "null"], "pattern": "^v-[a-f0-9]{8}$" },
+          "verification_status": { "type": "string", "enum": ["pending", "verified", "disproved", "inconclusive"] },
+          "verification_notes": { "type": "string" }
+        }
+      }
+    }
+  }
+}
