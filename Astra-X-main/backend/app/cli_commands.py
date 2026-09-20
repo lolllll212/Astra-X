@@ -54,8 +54,6 @@ async def cmd_chat(
         provider=runtime.provider_id,
     ):
         renderer.feed(event)
-        if isinstance(event, StreamDoneEvent):
-            break
     print()
     return 0
 
@@ -154,7 +152,7 @@ async def cmd_models(runtime: "AstraRuntime") -> int:
     return 0
 
 
-async def cmd_serve(*, host: str, port: int, reload: bool) -> int:
+def cmd_serve(*, host: str, port: int, reload: bool) -> int:
     """Start the FastAPI backend server."""
     import uvicorn
 
@@ -176,7 +174,7 @@ def parse_keyval(pairs: list[str]) -> dict[str, Any]:
     result: dict[str, Any] = {}
     for pair in pairs:
         if "=" not in pair:
-            key, value = pair, True
+            key, value = pair, "true"
         else:
             key, value = pair.split("=", 1)
         key = key.strip()

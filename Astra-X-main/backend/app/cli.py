@@ -451,6 +451,7 @@ def main(argv: list[str] | None = None) -> None:
         return
 
     if args.command == "tools":
+        import asyncio
         from app.cli_commands import cmd_tools_call, cmd_tools_list, parse_keyval
         from app.cli_runtime import build_runtime
 
@@ -466,6 +467,7 @@ def main(argv: list[str] | None = None) -> None:
         return
 
     if args.command == "models":
+        import asyncio
         from app.cli_commands import cmd_models
         from app.cli_runtime import build_runtime
 
@@ -477,6 +479,7 @@ def main(argv: list[str] | None = None) -> None:
         return
 
     if args.command == "doctor":
+        import asyncio
         from app.cli_doctor import run_doctor
         from app.cli_runtime import build_runtime
 
@@ -495,7 +498,7 @@ def main(argv: list[str] | None = None) -> None:
         port = args.port or settings.port
         from app.cli_commands import cmd_serve
 
-        sys.exit(asyncio.run(cmd_serve(host=host, port=port, reload=args.reload)))
+        sys.exit(cmd_serve(host=host, port=port, reload=args.reload))
 
     if args.command == "session":
         from app.cli_session import cmd_session_delete, cmd_session_list
@@ -507,18 +510,12 @@ def main(argv: list[str] | None = None) -> None:
         return
 
     if args.command == "stats":
-        from app.cli_session import cmd_stats
-
         sys.exit(asyncio.run(cmd_stats(args.days)))
 
     if args.command == "export":
-        from app.cli_session import cmd_session_export
-
         sys.exit(asyncio.run(cmd_session_export(args.session_id)))
 
     if args.command == "import":
-        from app.cli_session import cmd_session_import
-
         sys.exit(asyncio.run(cmd_session_import(args.path)))
 
     if args.command == "plugin":

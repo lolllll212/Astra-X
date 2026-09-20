@@ -106,6 +106,18 @@ class _StreamRenderer:
         self._text_buffer: str = ""
         self._tool_call_detected: bool = False
 
+    def _looks_like_tool_call(self, text: str) -> bool:
+        """Check if text looks like a JSON tool call."""
+        text = text.strip()
+        if not text.startswith("{"):
+            return False
+        try:
+            import json
+            obj = json.loads(text)
+            return isinstance(obj, dict) and ("name" in obj or "tool" in obj) and "arguments" in obj
+        except json.JSONDecodeError:
+            return ('"name"' in text and '"arguments"' in text) or ('"tool"' in text and '"arguments"' in text)
+
     def _flush_buffer(self) -> None:
         """Print buffered text only if no tool call was detected."""
         if self._text_buffer and not self._tool_call_detected:
@@ -202,7 +214,7 @@ class _StreamRenderer:
                 print()
                 print(_paint(f"  ✗ {event.message}", _RED))
             case StreamDoneEvent():
-                self._text_buffer = ""
+                self._flush_buffer()
                 if self._usage is not None:
                     print()
                     print(
