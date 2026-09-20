@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -30,21 +31,36 @@ class DownloadTool(Tool):
             name=self.name,
             description=self.description,
             parameters=[
-                ToolParameter(name="url", type_="string", description="The URL to download from", required=True),
-                ToolParameter(name="output_path", type_="string", description="Relative path within workspace to save the file", required=True),
+                ToolParameter(name="action", type_="string", description="Action to perform: 'download_file' (default) or 'get_status'", required=False, default="download_file"),
+                ToolParameter(name="url", type_="string", description="The URL to download from", required=False),
+                ToolParameter(name="output_path", type_="string", description="Relative path within workspace to save the file", required=False),
                 ToolParameter(name="timeout", type_="integer", description="Download timeout in seconds", required=False, default=60),
             ],
+            capabilities=self.capabilities,
         )
 
     async def _execute(self, context: ToolContext, **kwargs: Any) -> ToolResult:
+        action: str = kwargs.get("action", "download_file")
+
+        if action == "get_status":
+            return ToolResult(
+                success=True,
+                output=json.dumps({
+                    "tool": "web_download",
+                    "status": "ready",
+                    "capabilities": self.capabilities,
+                    "max_timeout": 60,
+                }, indent=2),
+            )
+
         url: str = kwargs.get("url", "")
         output_path: str = kwargs.get("output_path", "")
         timeout: int = int(kwargs.get("timeout", 60))
 
         if not url:
-            return ToolResult(success=False, error="url is required")
+            return ToolResult(success=False, error="url is required for download_file action")
         if not output_path:
-            return ToolResult(success=False, error="output_path is required")
+            return ToolResult(success=False, error="output_path is required for download_file action")
 
         import httpx
 

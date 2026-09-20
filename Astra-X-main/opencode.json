@@ -1,0 +1,44 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": ["@azumag/opencode-rate-limit-fallback@1.70.11"],
+  "watcher": {
+    "ignore": [
+      "**/node_modules/**",
+      "**/.venv/**",
+      "**/venv/**",
+      "**/__pycache__/**",
+      "**/dist/**",
+      "**/build/**",
+      "**/.next/**",
+      "**/.cache/**",
+      "**/*.pyc"
+    ]
+  },
+  "tool_output": {
+    "max_lines": 300,
+    "max_bytes": 16384
+  },
+  "compaction": {
+    "auto": true,
+    "prune": true,
+    "tail_turns": 15,
+    "preserve_recent_tokens": 42000,
+    "reserved": 16000
+  },
+  "small_model": "opencode/gemini-3.5-flash",
+  "permission": {
+    "read": {
+      "**/.env*": "deny",
+      "**/*.pem": "deny",
+      "**/*.key": "deny",
+      "**/.venv/**": "deny",
+      "**/node_modules/**": "deny"
+    },
+    "edit": {
+      "**/.env*": "deny",
+      "**/*.pem": "deny",
+      "**/*.key": "deny"
+    },
+    "webfetch": "ask"
+  }
+}

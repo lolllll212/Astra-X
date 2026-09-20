@@ -61,6 +61,7 @@ class N8NStatus:
     cli_path: str = ""
     version: str = ""
     node_found: bool = False
+    node_bin: str = ""
     server_running: bool = False
     base_url: str = ""
     api_key_set: bool = False

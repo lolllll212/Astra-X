@@ -30,9 +30,9 @@ class TextTool(Tool):
             name=self.name,
             description=self.description,
             parameters=[
-                ToolParameter(name="operation", type_="string", description="Operation: count_words, count_chars, split, join, upper, lower, trim, reverse, contains, replace, substring", required=True,
-                             enum=["count_words", "count_chars", "split", "join", "upper", "lower", "trim", "reverse", "contains", "replace", "substring"]),
-                ToolParameter(name="text", type_="string", description="The input text", required=True),
+                ToolParameter(name="action", type_="string", description="Action to perform: 'manipulate_text' (default) or 'get_status'", required=False, default="manipulate_text"),
+                ToolParameter(name="operation", type_="string", description="Operation: count_words, count_chars, split, join, upper, lower, trim, reverse, contains, replace, substring", required=False),
+                ToolParameter(name="text", type_="string", description="The input text", required=False),
                 ToolParameter(name="separator", type_="string", description="Separator for split/join operations", required=False),
                 ToolParameter(name="old", type_="string", description="Text to replace (for replace operation)", required=False),
                 ToolParameter(name="new", type_="string", description="Replacement text (for replace operation)", required=False),
@@ -44,6 +44,19 @@ class TextTool(Tool):
         )
 
     async def _execute(self, context: ToolContext, **kwargs: Any) -> ToolResult:
+        action: str = kwargs.get("action", "manipulate_text")
+
+        if action == "get_status":
+            return ToolResult(
+                success=True,
+                output=json.dumps({
+                    "tool": "text",
+                    "status": "ready",
+                    "capabilities": self.capabilities,
+                    "supported_operations": ["count_words", "count_chars", "split", "join", "upper", "lower", "trim", "reverse", "contains", "replace", "substring"],
+                }, indent=2),
+            )
+
         operation: str = kwargs.get("operation", "")
         text: str = kwargs.get("text", "")
 

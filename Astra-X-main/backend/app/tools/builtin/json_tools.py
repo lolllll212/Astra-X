@@ -30,9 +30,9 @@ class JsonTool(Tool):
             name=self.name,
             description=self.description,
             parameters=[
-                ToolParameter(name="operation", type_="string", description="Operation: parse, stringify, validate, query", required=True,
-                             enum=["parse", "stringify", "validate", "query"]),
-                ToolParameter(name="input", type_="string", description="JSON string input", required=True),
+                ToolParameter(name="action", type_="string", description="Action to perform: 'manipulate_json' (default) or 'get_status'", required=False, default="manipulate_json"),
+                ToolParameter(name="operation", type_="string", description="Operation: parse, stringify, validate, query", required=False),
+                ToolParameter(name="input", type_="string", description="JSON string input", required=False),
                 ToolParameter(name="path", type_="string", description="Dot-separated path for query operation (e.g. 'data.items.0.name')", required=False),
                 ToolParameter(name="indent", type_="integer", description="Indentation level for stringify operation", required=False, default=2),
             ],
@@ -40,6 +40,19 @@ class JsonTool(Tool):
         )
 
     async def _execute(self, context: ToolContext, **kwargs: Any) -> ToolResult:
+        action: str = kwargs.get("action", "manipulate_json")
+
+        if action == "get_status":
+            return ToolResult(
+                success=True,
+                output=json.dumps({
+                    "tool": "json",
+                    "status": "ready",
+                    "capabilities": self.capabilities,
+                    "supported_operations": ["parse", "stringify", "validate", "query"],
+                }, indent=2),
+            )
+
         operation: str = kwargs.get("operation", "")
         input_: str = kwargs.get("input", "")
 

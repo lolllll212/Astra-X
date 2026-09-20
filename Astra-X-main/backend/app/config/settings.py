@@ -313,7 +313,7 @@ class Settings(BaseSettings):
         description="Model name passed to the default provider when none is specified per-request.",
     )
     llm_request_timeout_seconds: float = Field(
-        default=60.0,
+        default=600.0,
         gt=0,
         description="Maximum time to wait on a single LLM provider request before timing out.",
     )
@@ -328,6 +328,22 @@ class Settings(BaseSettings):
     lm_studio_auto_discover: bool = Field(
         default=True,
         description="Discover and register models exposed by LM Studio at startup.",
+    )
+    nvidia_nim_base_url: str = Field(
+        default="https://integrate.api.nvidia.com/v1",
+        description="Base URL for NVIDIA NIM API.",
+    )
+    nvidia_nim_api_key: str | None = Field(
+        default=None,
+        description="API key for NVIDIA NIM API (optional, can use NVIDIA_API_KEY env var).",
+    )
+    openrouter_base_url: str = Field(
+        default="https://openrouter.ai/api/v1",
+        description="Base URL for OpenRouter API.",
+    )
+    openrouter_api_key: str | None = Field(
+        default=None,
+        description="API key for OpenRouter API (optional, can use OPENROUTER_API_KEY env var).",
     )
     openai_compatible_base_url: str | None = Field(
         default=None,
@@ -414,7 +430,7 @@ class Settings(BaseSettings):
             )
         return value
 
-    @field_validator("openai_compatible_base_url", "ollama_base_url", "lm_studio_base_url", mode="before")
+    @field_validator("openai_compatible_base_url", "ollama_base_url", "lm_studio_base_url", "nvidia_nim_base_url", "openrouter_base_url", mode="before")
     @classmethod
     def _validate_provider_url(cls, value: object, info: ValidationInfo) -> object:
         """Validate that provider URLs have explicit http(s) scheme."""

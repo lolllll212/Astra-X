@@ -148,15 +148,22 @@ class Transport:
         try:
             async with self._client.stream(method, path, json=json_data) as resp:
                 resp.raise_for_status()
-                async for line in resp.aiter_lines():
-                    if not line.startswith("data: "):
-                        continue
-                    chunk_data = line.removeprefix("data: ").strip()
-                    if chunk_data == "[DONE]":
-                        return
-                    if not chunk_data:
-                        continue
-                    yield json.loads(chunk_data)
+                try:
+                    async for line in resp.aiter_lines():
+                        if not line.startswith("data: "):
+                            continue
+                        chunk_data = line.removeprefix("data: ").strip()
+                        if chunk_data == "[DONE]":
+                            return
+                        if not chunk_data:
+                            continue
+                        yield json.loads(chunk_data)
+                except GeneratorExit:
+                    # A consumer closed the generator early (e.g. the
+                    # tool-call loop stopped streaming). Close the
+                    # underlying response cleanly and propagate.
+                    await resp.aclose()
+                    raise
 
         except httpx.TimeoutException as exc:
             raise ProviderTimeoutError(

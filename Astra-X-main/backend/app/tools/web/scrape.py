@@ -31,21 +31,36 @@ class ScrapeTool(Tool):
             name=self.name,
             description=self.description,
             parameters=[
-                ToolParameter(name="url", type_="string", description="The URL to scrape", required=True),
+                ToolParameter(name="action", type_="string", description="Action to perform: 'scrape_web' (default) or 'get_status'", required=False, default="scrape_web"),
+                ToolParameter(name="url", type_="string", description="The URL to scrape", required=False),
                 ToolParameter(name="extract", type_="string", description="What to extract: 'all', 'text', 'links', 'images', 'headings'", required=False, default="all",
-                             enum=["all", "text", "links", "images", "headings"]),
+                              enum=["all", "text", "links", "images", "headings"]),
                 ToolParameter(name="timeout", type_="integer", description="Request timeout in seconds", required=False, default=15),
             ],
             capabilities=self.capabilities,
         )
 
     async def _execute(self, context: ToolContext, **kwargs: Any) -> ToolResult:
+        action: str = kwargs.get("action", "scrape_web")
+
+        if action == "get_status":
+            return ToolResult(
+                success=True,
+                output=json.dumps({
+                    "tool": "web_scrape",
+                    "status": "ready",
+                    "capabilities": self.capabilities,
+                    "max_timeout": 60,
+                    "supported_extract": ["all", "text", "links", "images", "headings"],
+                }, indent=2),
+            )
+
         url: str = kwargs.get("url", "")
         extract: str = kwargs.get("extract", "all")
         timeout: int = int(kwargs.get("timeout", 15))
 
         if not url:
-            return ToolResult(success=False, error="url is required")
+            return ToolResult(success=False, error="url is required for scrape_web action")
 
         import httpx
 

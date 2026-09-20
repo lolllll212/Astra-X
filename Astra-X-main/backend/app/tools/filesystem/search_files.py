@@ -31,16 +31,32 @@ class SearchFilesTool(Tool):
             name=self.name,
             description=self.description,
             parameters=[
-                ToolParameter(name="root", type_="string", description="Root directory to search in", required=True),
-                ToolParameter(name="pattern", type_="string", description="Glob pattern (e.g. '*.py') or text to search for (when mode=grep)", required=True),
+                ToolParameter(name="action", type_="string", description="Action to perform: 'search_files' (default) or 'get_status'", required=False, default="search_files"),
+                ToolParameter(name="root", type_="string", description="Root directory to search in", required=False),
+                ToolParameter(name="pattern", type_="string", description="Glob pattern (e.g. '*.py') or text to search for (when mode=grep)", required=False),
                 ToolParameter(name="mode", type_="string", description="'glob' for filename matching, 'grep' for content search", required=False, default="glob",
-                             enum=["glob", "grep"]),
+                              enum=["glob", "grep"]),
                 ToolParameter(name="max_results", type_="integer", description="Maximum number of results to return", required=False, default=50),
                 ToolParameter(name="include_hidden", type_="boolean", description="Include hidden directories in search", required=False, default=False),
             ],
+            capabilities=self.capabilities,
         )
 
     async def _execute(self, context: ToolContext, **kwargs: Any) -> ToolResult:
+        action: str = kwargs.get("action", "search_files")
+
+        if action == "get_status":
+            return ToolResult(
+                success=True,
+                output=json.dumps({
+                    "tool": "search_files",
+                    "status": "ready",
+                    "capabilities": self.capabilities,
+                    "max_results": 50,
+                    "supported_modes": ["glob", "grep"],
+                }, indent=2),
+            )
+
         root_str: str = kwargs.get("root", "")
         pattern: str = kwargs.get("pattern", "")
         mode: str = kwargs.get("mode", "glob")

@@ -30,18 +30,33 @@ class SearchTool(Tool):
             name=self.name,
             description=self.description,
             parameters=[
-                ToolParameter(name="query", type_="string", description="Search query", required=True),
+                ToolParameter(name="action", type_="string", description="Action to perform: 'search_web' (default) or 'get_status'", required=False, default="search_web"),
+                ToolParameter(name="query", type_="string", description="Search query", required=False),
                 ToolParameter(name="count", type_="integer", description="Number of results to return (max 20)", required=False, default=8),
             ],
             capabilities=self.capabilities,
         )
 
     async def _execute(self, context: ToolContext, **kwargs: Any) -> ToolResult:
+        action: str = kwargs.get("action", "search_web")
+
+        if action == "get_status":
+            return ToolResult(
+                success=True,
+                output=json.dumps({
+                    "tool": "web_search",
+                    "status": "ready",
+                    "capabilities": self.capabilities,
+                    "provider": "duckduckgo",
+                    "max_results": 20,
+                }, indent=2),
+            )
+
         query: str = kwargs.get("query", "")
         count: int = int(kwargs.get("count", 8))
 
         if not query:
-            return ToolResult(success=False, error="query is required")
+            return ToolResult(success=False, error="query is required for search_web action")
         if count < 1 or count > 20:
             return ToolResult(success=False, error="count must be between 1 and 20")
 

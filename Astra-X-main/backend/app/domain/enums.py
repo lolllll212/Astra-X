@@ -19,6 +19,8 @@ class ProviderType(StrEnum):
 
     OLLAMA = "ollama"
     LM_STUDIO = "lm_studio"
+    NVIDIA_NIM = "nvidia_nim"
+    OPENROUTER = "openrouter"
     OPENAI_COMPATIBLE = "openai_compatible"
     ANTHROPIC = "anthropic"
     OPENAI = "openai"

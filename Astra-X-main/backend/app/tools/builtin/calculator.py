@@ -8,6 +8,7 @@ functions are allowed.
 from __future__ import annotations
 
 import ast
+import json
 import math
 import operator
 from typing import Any
@@ -73,12 +74,28 @@ class CalculatorTool(Tool):
             name=self.name,
             description=self.description,
             parameters=[
-                ToolParameter(name="expression", type_="string", description="Mathematical expression to evaluate", required=True),
+                ToolParameter(name="action", type_="string", description="Action: 'calculate' (default) or 'get_status'", required=False, default="calculate"),
+                ToolParameter(name="expression", type_="string", description="Mathematical expression to evaluate (e.g. '2 + 3 * 4', 'sqrt(16)', 'sin(pi/2)')", required=False),
             ],
             capabilities=self.capabilities,
         )
 
     async def _execute(self, context: ToolContext, **kwargs: Any) -> ToolResult:
+        action: str = kwargs.get("action", "calculate")
+
+        if action == "get_status":
+            return ToolResult(
+                success=True,
+                output=json.dumps({
+                    "tool": "calculator",
+                    "status": "ready",
+                    "capabilities": self.capabilities,
+                    "supported_operators": ["+", "-", "*", "/", "//", "%", "**"],
+                    "supported_functions": list(_ALLOWED_FUNCS.keys()),
+                    "supported_constants": list(_ALLOWED_CONSTS),
+                }, indent=2),
+            )
+
         expression: str = kwargs.get("expression", "")
         if not expression:
             return ToolResult(success=False, error="expression is required")

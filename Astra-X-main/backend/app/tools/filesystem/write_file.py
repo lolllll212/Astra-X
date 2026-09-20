@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -30,14 +31,28 @@ class WriteFileTool(Tool):
             name=self.name,
             description=self.description,
             parameters=[
-                ToolParameter(name="path", type_="string", description="Absolute or workspace-relative file path", required=True),
-                ToolParameter(name="content", type_="string", description="Content to write to the file", required=True),
+                ToolParameter(name="action", type_="string", description="Action to perform: 'write_file' (default) or 'get_status'", required=False, default="write_file"),
+                ToolParameter(name="path", type_="string", description="Absolute or workspace-relative file path", required=False),
+                ToolParameter(name="content", type_="string", description="Content to write to the file", required=False),
                 ToolParameter(name="encoding", type_="string", description="File encoding (default: utf-8)", required=False, default="utf-8"),
                 ToolParameter(name="append", type_="boolean", description="If true, append instead of overwrite", required=False, default=False),
             ],
+            capabilities=self.capabilities,
         )
 
     async def _execute(self, context: ToolContext, **kwargs: Any) -> ToolResult:
+        action: str = kwargs.get("action", "write_file")
+
+        if action == "get_status":
+            return ToolResult(
+                success=True,
+                output=json.dumps({
+                    "tool": "write_file",
+                    "status": "ready",
+                    "capabilities": self.capabilities,
+                }, indent=2),
+            )
+
         path_str: str = kwargs.get("path", "")
         content: str = kwargs.get("content", "")
         encoding: str = kwargs.get("encoding", "utf-8")

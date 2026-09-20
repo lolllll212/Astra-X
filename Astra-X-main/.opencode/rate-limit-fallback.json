@@ -1,0 +1,16 @@
+# Free-model fallback chain (rate-limit-fallback plugin v1.x)
+# Primary effect: when the active model hits 429/rate-limit, automatically
+# retry with the next model. Chain only uses free models available on the
+# opencode (Zen) and openrouter providers.
+
+{
+  "fallbackModels": [
+    { "providerID": "opencode", "modelID": "gemini-3.5-flash" },
+    { "providerID": "opencode", "modelID": "deepseek-v4-flash" },
+    { "providerID": "opencode", "modelID": "gpt-5.4-nano" },
+    { "providerID": "openrouter", "modelID": "deepseek/deepseek-v4-flash" },
+    { "providerID": "openrouter", "modelID": "google/gemini-3.5-flash-lite-preview" }
+  ],
+  "cooldownMs": 60000,
+  "fallbackMode": "cycle"
+}

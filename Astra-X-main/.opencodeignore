@@ -1,0 +1,49 @@
+# .opencodeignore — keep heavy, generated, and vendored content out of agent context.
+# Patterns follow gitignore/ripgrep syntax. Backed by the same ignore plumbing as .gitignore,
+# so grep/glob/list won't surface these and the watcher stays quiet.
+#
+# Auto-generated / derived artifacts
+backend/astra_x.db.backup-*
+backend/astra_training_log.jsonl
+backend/astra_main_review.json
+backend/tool_schemas.json
+backend/__pycache__/
+backend/_tool_discovery.py
+*.py[cod]
+*.db
+*.sqlite
+*.sqlite3
+
+# Vendored / dependency trees
+node_modules/
+**/node_modules/
+.venv/
+venv/
+env/
+ENV/
+sdk/.venv/
+
+# Build output & caches
+dist/
+build/
+*.egg-info/
+*.egg
+.next/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.tox/
+.coverage
+
+# Heavy / noisy config & data
+backend/docs/system_state.json
+*.log
+logs/
+*.pem
+*.key
+
+# Secrets (never hand these to the model)
+.env
+.env.*
+!.env.example

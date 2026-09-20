@@ -31,12 +31,14 @@ class ListDirectoryTool(Tool):
             name=self.name,
             description=self.description,
             parameters=[
-                ToolParameter(name="path", type_="string", description="Directory path", required=True),
+                ToolParameter(name="action", type_="string", description="Action to perform: 'list_directory' (default) or 'get_status'", required=False, default="list_directory"),
+                ToolParameter(name="path", type_="string", description="Directory path", required=False),
                 ToolParameter(name="pattern", type_="string", description="Glob pattern filter (e.g. '*.py', '**/*.txt')", required=False),
                 ToolParameter(name="recursive", type_="boolean", description="List recursively", required=False, default=False),
                 ToolParameter(name="max_depth", type_="integer", description="Maximum directory depth for recursive listing", required=False),
                 ToolParameter(name="include_hidden", type_="boolean", description="Include hidden files (dotfiles)", required=False, default=False),
             ],
+            capabilities=self.capabilities,
         )
 
     async def _execute(self, context: ToolContext, **kwargs: Any) -> ToolResult:

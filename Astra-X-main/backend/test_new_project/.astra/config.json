@@ -1,0 +1,9 @@
+{
+  "model": "qwen2.5-coder-7b-instruct",
+  "provider": "lm_studio",
+  "workspace": "./workspace",
+  "native_tools": false,
+  "tool_schema_role": "user",
+  "max_iterations": 5,
+  "log_level": "INFO"
+}

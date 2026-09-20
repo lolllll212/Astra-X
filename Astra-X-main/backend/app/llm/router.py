@@ -376,6 +376,19 @@ class LLMRouter:
             and not self._is_circuit_open(provider_id)
         )
 
+    def get_provider(self, provider_id: str) -> LLMProvider | None:
+        """Get a provider by ID if it exists and is healthy.
+
+        Args:
+            provider_id: The provider identifier to retrieve.
+
+        Returns:
+            The provider instance if found and healthy, None otherwise.
+        """
+        if not self.is_provider_available(provider_id):
+            return None
+        return self._registry.get(provider_id)
+
     async def check_health(
         self,
         provider_id: str | None = None,

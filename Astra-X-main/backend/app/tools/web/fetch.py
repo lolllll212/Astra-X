@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from app.tools.base import Tool
@@ -29,7 +30,8 @@ class FetchTool(Tool):
             name=self.name,
             description=self.description,
             parameters=[
-                ToolParameter(name="url", type_="string", description="The URL to fetch", required=True),
+                ToolParameter(name="action", type_="string", description="Action to perform: 'fetch_url' (default) or 'get_status'", required=False, default="fetch_url"),
+                ToolParameter(name="url", type_="string", description="The URL to fetch", required=False),
                 ToolParameter(name="format", type_="string", description="Output format: 'text' or 'html'", required=False, default="text"),
                 ToolParameter(name="timeout", type_="integer", description="Request timeout in seconds", required=False, default=15),
             ],
@@ -37,12 +39,25 @@ class FetchTool(Tool):
         )
 
     async def _execute(self, context: ToolContext, **kwargs: Any) -> ToolResult:
+        action: str = kwargs.get("action", "fetch_url")
+
+        if action == "get_status":
+            return ToolResult(
+                success=True,
+                output=json.dumps({
+                    "tool": "web_fetch",
+                    "status": "ready",
+                    "capabilities": self.capabilities,
+                    "max_timeout": 60,
+                }, indent=2),
+            )
+
         url: str = kwargs.get("url", "")
         fmt: str = kwargs.get("format", "text")
         timeout: int = int(kwargs.get("timeout", 15))
 
         if not url:
-            return ToolResult(success=False, error="url is required")
+            return ToolResult(success=False, error="url is required for fetch_url action")
         if timeout < 1 or timeout > 60:
             return ToolResult(success=False, error="timeout must be between 1 and 60")
 
@@ -67,7 +82,7 @@ class FetchTool(Tool):
             text = re.sub(r"\s+", " ", text).strip()
             if len(text) > 50000:
                 text = text[:50000] + "\n\n[truncated at 50000 characters]"
-            content = text
+                content = text
 
         meta = {
             "url": url,

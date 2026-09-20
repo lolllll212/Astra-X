@@ -122,6 +122,8 @@ class ChatCoordinator:
         learning_manager: LearningManager | None = None,
         capability_registry: CapabilityRegistry | None = None,
         agent_config: AgentConfig | None = None,
+        native_tools: bool = True,
+        tool_schema_role: MessageRole = MessageRole.SYSTEM,
     ) -> None:
         self._llm_router = llm_router
         self._tool_registry = tool_registry
@@ -133,6 +135,8 @@ class ChatCoordinator:
         self._learning_manager = learning_manager
         self._capability_registry = capability_registry
         self._agent_config = agent_config or AgentConfig()
+        self._native_tools = native_tools
+        self._tool_schema_role = tool_schema_role
 
     @property
     def _has_agent_pipeline(self) -> bool:
@@ -507,7 +511,11 @@ class ChatCoordinator:
         params: GenerationParams | None,
     ) -> AsyncIterator[StreamEvent]:
         """Simple tool-calling loop for backwards compatibility."""
-        prompt_messages = _inject_tool_schemas(list(messages), self._tool_registry)
+        prompt_messages = _inject_tool_schemas(
+            list(messages),
+            self._tool_registry,
+            role=self._tool_schema_role,
+        )
         executed_fallbacks: dict[str, str] = {}
 
         for _ in range(_MAX_TOOL_ITERATIONS):
@@ -517,7 +525,7 @@ class ChatCoordinator:
                 provider=provider or conversation.metadata.provider,
                 params=params or GenerationParams(),
                 stream=True,
-                tools=_tool_definitions(self._tool_registry),
+                tools=_tool_definitions(self._tool_registry) if self._native_tools else None,
             )
 
             from app.llm.streaming import StreamCollector
@@ -688,19 +696,35 @@ def _extract_user_goal(user_message: Message) -> str:
     return ""
 
 
+def _shorten(text: str, limit: int = 160) -> str:
+    """Trim a long description for the compact tool-schema JSON blob."""
+    text = text.replace("\n", " ").strip()
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1].rstrip() + "…"
+
+
 def _inject_tool_schemas(
     messages: list[Message],
     registry: ToolRegistry | None,
+    role: MessageRole = MessageRole.SYSTEM,
 ) -> list[Message]:
-    """Append a system message describing available tool schemas.
+    """Append tool schemas to the message list.
 
     This is a provider-independent way to tell the LLM what tools are
     available.  Every registered tool's schema is rendered as a JSON
     array and attached to the message list.
 
+    The schemas are normally attached as a ``SYSTEM`` message. Some
+    local providers (notably LM Studio) reject the ``system`` role in
+    their prompt template; for those, pass ``role=MessageRole.USER`` so
+    the schemas are embedded at the start of the last user message
+    instead.
+
     Args:
         messages: The current message list to extend.
         registry: The tool registry, or ``None``.
+        role: Message role used to attach the schemas.
 
     Returns:
         A new list with the tool schemas message appended (or the
@@ -710,34 +734,60 @@ def _inject_tool_schemas(
         return messages
 
     schemas = registry.schemas()
-    schema_lines: list[str] = [
+    schema_text: list[str] = [
         "You have access to the following tools. "
-        "When you need to use a tool, respond with the appropriate tool call.",
+        "When you need to use a tool, output a single line with the "
+        "EXACT JSON format below and nothing else on that line, then "
+        "wait for the tool result before continuing:",
         "",
+        '{"name": "<tool_name>", "arguments": { <arguments for the tool> }}',
+        "",
+        "If the user's request requires calculation, lookup, file, or "
+        "specialized-tool work, you MUST call the matching tool first "
+        "instead of guessing or fabricating the answer.",
+        "",
+        "Available tools (JSON):",
         "```json",
+        "[",
     ]
-    for s in schemas:
+    for i, s in enumerate(schemas):
         params_list = [
-            {
-                "name": p.name,
-                "type": p.type_,
-                "description": p.description,
-                "required": p.required,
-            }
+            f'["{p.name}", "{p.type_}"{"!" if p.required else ""}]'
             for p in s.parameters
         ]
-        schema_lines.append(
+        comma = "," if i < len(schemas) - 1 else ""
+        schema_text.append(
             f'  {{"name": "{s.name}", '
-            f'"description": "{s.description}", '
-            f'"parameters": {params_list}}}'
+            f'"desc": "{_shorten(s.description, 96)}", '
+            f'"params": [{", ".join(params_list)}]}}{comma}'
         )
-    schema_lines.append("```")
+    schema_text.append("]")
+    schema_text.append("```")
+
+    rendered = "\n".join(schema_text)
+
+    if role is MessageRole.USER and messages:
+        # Embed the schemas into the most recent user message so local
+        # providers that reject the system role still see them.
+        result = list(messages)
+        last_user_idx = next(
+            (i for i in range(len(result) - 1, -1, -1) if result[i].role is MessageRole.USER),
+            None,
+        )
+        if last_user_idx is not None:
+            last = result[last_user_idx]
+            new_content = [
+                TextBlock(text=rendered + "\n\nUser request:\n"),
+                *last.content,
+            ]
+            result[last_user_idx] = last.model_copy(update={"content": new_content})
+            return result
 
     tool_message = Message(
         id=str(uuid4()),
         conversation_id=messages[0].conversation_id if messages else "",
-        role=MessageRole.SYSTEM,
-        content=[TextBlock(text="\n".join(schema_lines))],
+        role=role,
+        content=[TextBlock(text=rendered)],
         created_at=datetime.now(UTC),
     )
 
@@ -776,6 +826,29 @@ def _tool_definitions(registry: ToolRegistry | None) -> list[dict[str, object]]:
     return definitions
 
 
+def _iter_json_objects(text: str):
+    """Yield every complete JSON object found inside *text*.
+
+    Uses ``json.JSONDecoder.raw_decode`` at each ``{`` so nested braces
+    are handled correctly (a naive ``\\{.*?\\}`` regex stops at the first
+    closing brace and yields unparseable fragments).
+    """
+    decoder = json.JSONDecoder()
+    start = 0
+    while True:
+        idx = text.find("{", start)
+        if idx == -1:
+            break
+        try:
+            obj, end = decoder.raw_decode(text[idx:])
+        except json.JSONDecodeError:
+            start = idx + 1
+            continue
+        if isinstance(obj, dict):
+            yield obj
+        start = idx + end
+
+
 def _extract_text_tool_calls(
     message: Message,
     registry: ToolRegistry | None,
@@ -787,18 +860,9 @@ def _extract_text_tool_calls(
     text = "\n".join(
         block.text for block in message.content if isinstance(block, TextBlock)
     )
-    candidates = re.findall(r"```(?:json)?\s*(\{.*?\})\s*```", text, flags=re.DOTALL)
-    candidates.extend(
-        re.findall(r"<function>\s*(\{.*?\})\s*</function>", text, flags=re.DOTALL)
-    )
-    candidates.extend(re.findall(r"(\{\s*\"name\"\s*:.*?\})", text, flags=re.DOTALL))
 
-    for candidate in candidates:
-        try:
-            payload = json.loads(candidate)
-        except json.JSONDecodeError:
-            continue
-        name = payload.get("name")
+    for payload in _iter_json_objects(text):
+        name = payload.get("name") or payload.get("tool")
         arguments = payload.get("arguments", payload.get("parameters", {}))
         if (
             isinstance(name, str)

@@ -54,6 +54,7 @@ def domain_to_responses_input(
 
         texts: list[str] = []
         has_multimodal = any(isinstance(b, ImageBlock) for b in msg.content)
+        appended = False
 
         if has_multimodal:
             content_list: list[dict[str, Any]] = []
@@ -80,7 +81,8 @@ def domain_to_responses_input(
                         "tool_call_id": block.tool_call_id,
                         "content": block.output,
                     })
-                    continue
+                    appended = True
+                    break
             if content_list:
                 entry["content"] = content_list
         else:
@@ -102,11 +104,12 @@ def domain_to_responses_input(
                         "tool_call_id": block.tool_call_id,
                         "content": block.output,
                     })
-                    continue
-            if texts:
-                entry["content"] = "\n".join(texts)
+                    appended = True
+                    break
+            entry["content"] = "\n".join(texts)
 
-        result.append(entry)
+        if not appended:
+            result.append(entry)
     return result
 
 

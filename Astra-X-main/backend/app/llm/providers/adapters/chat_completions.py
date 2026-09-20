@@ -55,6 +55,7 @@ def domain_to_openai_messages(
 
         texts: list[str] = []
         has_multimodal = any(isinstance(b, ImageBlock) for b in msg.content)
+        appended = False
 
         if has_multimodal:
             content_list: list[dict[str, Any]] = []
@@ -67,12 +68,17 @@ def domain_to_openai_messages(
                         "image_url": {"url": block.data_uri},
                     })
                 elif isinstance(block, ToolCallBlock):
+                    # LM Studio (and OpenAI schema) require ``arguments`` to be
+                    # a JSON-encoded string, never a raw dict.
+                    args = block.arguments
+                    if not isinstance(args, str):
+                        args = json.dumps(args, ensure_ascii=False, sort_keys=True)
                     entry.setdefault("tool_calls", []).append({
                         "id": block.tool_call_id,
                         "type": "function",
                         "function": {
                             "name": block.tool_name,
-                            "arguments": block.arguments,
+                            "arguments": args,
                         },
                     })
                 elif isinstance(block, ToolResultBlock):
@@ -81,7 +87,8 @@ def domain_to_openai_messages(
                         "tool_call_id": block.tool_call_id,
                         "content": block.output,
                     })
-                    continue
+                    appended = True
+                    break
             if content_list:
                 entry["content"] = content_list
         else:
@@ -89,12 +96,17 @@ def domain_to_openai_messages(
                 if isinstance(block, TextBlock):
                     texts.append(block.text)
                 elif isinstance(block, ToolCallBlock):
+                    # LM Studio (and OpenAI schema) require ``arguments`` to be
+                    # a JSON-encoded string, never a raw dict.
+                    args = block.arguments
+                    if not isinstance(args, str):
+                        args = json.dumps(args, ensure_ascii=False, sort_keys=True)
                     entry.setdefault("tool_calls", []).append({
                         "id": block.tool_call_id,
                         "type": "function",
                         "function": {
                             "name": block.tool_name,
-                            "arguments": block.arguments,
+                            "arguments": args,
                         },
                     })
                 elif isinstance(block, ToolResultBlock):
@@ -103,11 +115,14 @@ def domain_to_openai_messages(
                         "tool_call_id": block.tool_call_id,
                         "content": block.output,
                     })
-                    continue
-            if texts:
-                entry["content"] = "\n".join(texts)
+                    appended = True
+                    break
+            # LM Studio (unlike OpenAI) requires ``content`` to always
+            # be a string, even when a tool call is present.
+            entry["content"] = "\n".join(texts)
 
-        result.append(entry)
+        if not appended:
+            result.append(entry)
     return result
 
 

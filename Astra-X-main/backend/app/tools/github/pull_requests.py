@@ -30,8 +30,9 @@ class GitHubPullRequestsTool(Tool):
             name=self.name,
             description=self.description,
             parameters=[
-                ToolParameter(name="owner", type_="string", description="Repository owner", required=True),
-                ToolParameter(name="repo", type_="string", description="Repository name", required=True),
+                ToolParameter(name="action", type_="string", description="Action to perform: 'get_pull_requests' (default) or 'get_status'", required=False, default="get_pull_requests"),
+                ToolParameter(name="owner", type_="string", description="Repository owner", required=False),
+                ToolParameter(name="repo", type_="string", description="Repository name", required=False),
                 ToolParameter(name="state", type_="string", description="PR state: open, closed, all", required=False, default="open",
                              enum=["open", "closed", "all"]),
                 ToolParameter(name="count", type_="integer", description="Number of PRs to return (max 50)", required=False, default=10),
@@ -39,13 +40,25 @@ class GitHubPullRequestsTool(Tool):
         )
 
     async def _execute(self, context: ToolContext, **kwargs: Any) -> ToolResult:
+        action: str = kwargs.get("action", "get_pull_requests")
+
+        if action == "get_status":
+            return ToolResult(
+                success=True,
+                output=json.dumps({
+                    "tool": "github_pull_requests",
+                    "status": "ready",
+                    "capabilities": self.capabilities,
+                }, indent=2),
+            )
+
         owner: str = kwargs.get("owner", "")
         repo: str = kwargs.get("repo", "")
         state: str = kwargs.get("state", "open")
         count: int = int(kwargs.get("count", 10))
 
         if not owner or not repo:
-            return ToolResult(success=False, error="owner and repo are required")
+            return ToolResult(success=False, error="owner and repo are required for get_pull_requests action")
         if count < 1 or count > 50:
             return ToolResult(success=False, error="count must be between 1 and 50")
 

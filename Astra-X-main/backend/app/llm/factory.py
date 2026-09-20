@@ -14,6 +14,8 @@ from app.llm.base import LLMProvider
 from app.llm.providers.lmstudio import LMStudioProvider
 from app.llm.providers.ollama import OllamaProvider
 from app.llm.providers.openai_compatible import OpenAICompatibleProvider
+from app.llm.providers.nvidia_nim import NvidiaNimProvider
+from app.llm.providers.openrouter import OpenRouterProvider
 
 __all__ = [
     "create_provider_adapter",
@@ -36,6 +38,8 @@ def provider_type_to_default_base_url(provider_type: ProviderType, settings: Set
         ProviderType.OLLAMA: settings.ollama_base_url,
         ProviderType.LM_STUDIO: settings.lm_studio_base_url,
         ProviderType.OPENAI_COMPATIBLE: settings.openai_compatible_base_url,
+        ProviderType.NVIDIA_NIM: settings.nvidia_nim_base_url,
+        ProviderType.OPENROUTER: settings.openrouter_base_url,
     }
     return mapping.get(provider_type)
 
@@ -82,6 +86,24 @@ def create_provider_adapter(
             model=spec.models[0] if spec.models else "local-model",
             timeout_seconds=timeout,
             provider_id=provider_id,
+        )
+
+    if spec.provider_type == ProviderType.NVIDIA_NIM:
+        return NvidiaNimProvider(
+            base_url=base_url or "https://integrate.api.nvidia.com/v1",
+            model=spec.models[0] if spec.models else "nvidia/nemotron-3-ultra",
+            timeout_seconds=timeout,
+            provider_id=provider_id,
+            api_key=api_key_str,
+        )
+
+    if spec.provider_type == ProviderType.OPENROUTER:
+        return OpenRouterProvider(
+            base_url=base_url or "https://openrouter.ai/api/v1",
+            model=spec.models[0] if spec.models else "meta-llama/llama-3.1-8b-instruct:free",
+            timeout_seconds=timeout,
+            provider_id=provider_id,
+            api_key=api_key_str,
         )
 
     if spec.provider_type == ProviderType.OPENAI_COMPATIBLE:

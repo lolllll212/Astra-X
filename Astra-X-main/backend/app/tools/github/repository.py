@@ -30,17 +30,30 @@ class GitHubRepositoryTool(Tool):
             name=self.name,
             description=self.description,
             parameters=[
-                ToolParameter(name="owner", type_="string", description="Repository owner (user or organization)", required=True),
-                ToolParameter(name="repo", type_="string", description="Repository name", required=True),
+                ToolParameter(name="action", type_="string", description="Action to perform: 'get_repository_info' (default) or 'get_status'", required=False, default="get_repository_info"),
+                ToolParameter(name="owner", type_="string", description="Repository owner (user or organization)", required=False),
+                ToolParameter(name="repo", type_="string", description="Repository name", required=False),
             ],
         )
 
     async def _execute(self, context: ToolContext, **kwargs: Any) -> ToolResult:
+        action: str = kwargs.get("action", "get_repository_info")
+
+        if action == "get_status":
+            return ToolResult(
+                success=True,
+                output=json.dumps({
+                    "tool": "github_repository",
+                    "status": "ready",
+                    "capabilities": self.capabilities,
+                }, indent=2),
+            )
+
         owner: str = kwargs.get("owner", "")
         repo: str = kwargs.get("repo", "")
 
         if not owner or not repo:
-            return ToolResult(success=False, error="owner and repo are required")
+            return ToolResult(success=False, error="owner and repo are required for get_repository_info action")
 
         import httpx
 

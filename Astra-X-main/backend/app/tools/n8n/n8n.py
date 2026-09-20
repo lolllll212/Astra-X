@@ -28,6 +28,8 @@ N8N_BASE_URL_ENV = "N8N_BASE_URL"
 N8N_BASE_URL_DEFAULT = "http://127.0.0.1:5678"
 N8N_API_KEY_ENV = "N8N_API_KEY"
 N8N_CLI_PATH_ENV = "N8N_CLI_PATH"
+N8N_NODE_BIN_ENV = "N8N_NODE_BIN"
+NODE_BIN_DEFAULT = r"C:\Users\Ashut\AppData\Local\Programs\nodejs24\node-v24.21.0-win-x64\node.exe"
 
 
 class N8NTool(Tool):
@@ -141,6 +143,7 @@ class N8NTool(Tool):
         self._home = self._find_home()
         found = self._find_n8n_cli()
         self._cli_path = found
+        self._node_bin = self._find_node_bin()
         self._config = N8NConfig(
             base_url=os.environ.get(N8N_BASE_URL_ENV, N8N_BASE_URL_DEFAULT),
             api_key=os.environ.get(N8N_API_KEY_ENV, ""),
@@ -180,9 +183,32 @@ class N8NTool(Tool):
                     return which(candidate) or candidate
         return ""
 
+    def _find_node_bin(self) -> str:
+        """Locate a Node binary that can run the n8n CLI.
+
+        The n8n monorepo requires Node >= 24 and its native dependency
+        (isolated-vm) is only built for Node 24 LTS on this machine, so the
+        bundled checkout must run under a non-default Node.
+        """
+        candidates: list[str] = []
+        env = os.environ.get(N8N_NODE_BIN_ENV, "")
+        if env:
+            candidates.append(env)
+        candidates.append(NODE_BIN_DEFAULT)
+        for candidate in candidates:
+            if candidate and os.path.isfile(candidate):
+                return candidate
+        from shutil import which
+
+        return which("node") or ""
+
     def _cli_prefix(self) -> list[str]:
         """Build the argv prefix needed to launch the n8n CLI on this platform."""
         cli = self._cli_path or "n8n"
+        if self._home:
+            cli_js = str(Path(self._home) / "packages" / "cli" / "bin" / "n8n")
+            if self._node_bin and os.path.isfile(cli_js) and os.path.isfile(self._node_bin):
+                return [self._node_bin, cli_js]
         if cli.lower().endswith((".cmd", ".bat")) and os.name == "nt":
             return ["cmd", "/c", cli]
         return [cli]
@@ -192,6 +218,8 @@ class N8NTool(Tool):
         env = dict(os.environ)
         if self._home:
             env.setdefault(N8N_HOME_ENV, self._home)
+        env.setdefault("N8N_RUNNERS_BROKER_PORT", "5671")
+        env.setdefault("N8N_RUNNERS_TASK_BROKER_URI", "http://127.0.0.1:5671")
         try:
             proc = await asyncio.wait_for(
                 asyncio.create_subprocess_exec(
@@ -282,7 +310,8 @@ class N8NTool(Tool):
             cli_found=bool(self._cli_path),
             cli_path=self._cli_path,
             version=version,
-            node_found=bool(which("node")),
+            node_found=bool(self._node_bin),
+            node_bin=self._node_bin,
             server_running=running,
             base_url=base_url,
             api_key_set=bool(self._config.api_key),
@@ -304,6 +333,7 @@ class N8NTool(Tool):
                 "cli_path": status.cli_path,
                 "version": status.version,
                 "node_found": status.node_found,
+                "node_bin": status.node_bin,
                 "server_running": status.server_running,
                 "base_url": status.base_url,
                 "api_key_set": status.api_key_set,
